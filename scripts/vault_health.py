@@ -780,7 +780,19 @@ def check_wanted_notes(notes: dict, vault: Path, excludes=None) -> list:
             )
             if not resolved:
                 potential_folder = vault / link
-                if not potential_folder.is_dir():
+                try:
+                    is_folder = potential_folder.is_dir()
+                except OSError:
+                    # A malformed wikilink -- an unclosed '[[' that swallowed a
+                    # newline and a paragraph of prose -- produces a "path" of
+                    # several hundred characters. stat() then raises ENAMETOOLONG
+                    # (or ENOENT on a bad component) and killed the whole run,
+                    # so ONE corrupt link anywhere made heal_links unusable for
+                    # the entire vault. Measured 2026-08-20: 2 such links out of
+                    # 749 targets did exactly that. Such a link is certainly not
+                    # a folder, so fall through and report it as wanted.
+                    is_folder = False
+                if not is_folder:
                     is_asset = link_name.lower().endswith(_ASSET_SUFFIXES)
                     issues.append({
                         "type": "missing_attachment" if is_asset else "wanted_note",
