@@ -140,5 +140,35 @@ def obsidian_get_skill(name: str) -> str:
     return json.dumps(vault_ops.get_skill(name))
 
 
+@mcp.tool()
+def obsidian_heal_links(
+    path: str | None = None,
+    dry_run: bool = True,
+    mapping: dict[str, str] | None = None,
+    limit: int = 200,
+) -> str:
+    """Repoint unresolved [[wikilinks]] at the notes they meant, alias-preserving.
+
+    A vault links notes by human Title while the file is kebab-cased, so those
+    links do not resolve and vault_health counts them as "wanted notes". This
+    repoints each one when exactly one note is an unambiguous match, keeping the
+    readable text as a display alias: [[kebab-stem|Human Title]].
+
+    DRY RUN BY DEFAULT - returns {counts, fixes, proposals, skipped} and writes
+    nothing. Only dry_run=False writes. Ambiguous links and links with no match
+    are reported, never guessed. `path` limits it to one note; `mapping` supplies
+    explicit {link: target} overrides for links no matcher can resolve (e.g. a
+    link written as a memory-file name that has no vault equivalent).
+
+    Wanted links are a wishlist, not errors - many are deliberate forward
+    references. Links inside ``` fences and the vault-root docs (README, AGENTS,
+    _CLAUDE, INDEX) are skipped, because those discuss wikilinks rather than use
+    them.
+    """
+    return json.dumps(
+        vault_ops.heal_links(path=path, dry_run=dry_run, mapping=mapping, limit=limit)
+    )
+
+
 if __name__ == "__main__":
     mcp.run()

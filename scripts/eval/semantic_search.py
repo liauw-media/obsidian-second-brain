@@ -57,8 +57,35 @@ INDEX_FILE = ".obsidian-semantic-index.json"  # written at vault root
 # Embedding models have a token limit (mxbai-embed-large ~512 tokens). Long notes
 # must be split into safe chunks and averaged, or the model 500s. ~1200 chars sits
 # well under the limit; capping the chunk count bounds time on huge notes.
-_CHUNK_CHARS = 1200
-_MAX_CHUNKS = 8
+# RAISED 1200 -> 4000 on 2026-07-30, together with the switch to bge-m3.
+# The old value was sized for nomic-embed-text's 2048-token window and left
+# 127 of 432 notes (29.4%) TRUNCATED - the GLI standards lost 94-97% of their
+# text, log.md 88%. Measured ceiling: an embedding must fit in ONE physical
+# batch, and ollama starts llama-server with `-ub 2048`, so the real limit is
+# ~2048 TOKENS per call, not bge-m3's 8192 context. 4000 chars measured at
+# 1746 tokens (~15% headroom); 8000 chars = 3492 tokens and returns HTTP 500
+# "input is too large to process. increase the physical batch size".
+# `options.num_batch=8192` does lift it, but the FIRST consumer to load the
+# model fixes -ub for everyone - a short query from the MCP server would then
+# break the builder's large chunks. Not worth that coupling.
+_CHUNK_CHARS = 4000
+# 4000 x 12 = 48,000 chars covered -> truncated notes drop 127 -> 11 (2.5%),
+# and total embed calls DROP 2484 -> 1204 because fewer, larger chunks mean
+# fewer round-trips. The 11 remaining are 100-338 KB reference documents whose
+# mean-pooled vector is near-meaningless anyway; those need chunk-LEVEL
+# retrieval (one vector per chunk), which is an architecture change, not a knob.
+_MAX_CHUNKS = 12
+
+# CHUNK-LEVEL RETRIEVAL (added 2026-07-30). A note longer than the threshold gets
+# an additional vector PER CHUNK, and its score becomes the best-matching chunk
+# instead of a mean-pooled centroid. Rationale: mean-pooling 85 chunks of a 338 KB
+# regulatory standard yields a vector that is close to nothing in particular, so
+# those documents were effectively unsearchable even once truncation was fixed.
+# Threshold measured against this vault: 20,000 chars -> 37 of 432 notes chunked,
+# 597 chunk vectors, +264 embed calls (~2 min), index ~8.8 -> ~21 MB.
+# Cap 200 > the 85 the largest note needs, so NOTHING is truncated any more.
+_CHUNK_THRESHOLD = 20_000
+_CHUNK_MAX_STORED = 200
 
 
 # --------------------------------------------------------------------------- #
@@ -155,6 +182,27 @@ def embed_note(text: str) -> list[float]:
 # --------------------------------------------------------------------------- #
 # Pure-stdlib vector math
 # --------------------------------------------------------------------------- #
+def embed_note_detail(text: str) -> tuple[list[float], list[dict] | None]:
+    """Embed a note. Returns (pooled_vector, per_chunk_records or None).
+
+    Short notes behave exactly as before: chunk, embed, mean-pool, no chunk records.
+    Notes over _CHUNK_THRESHOLD additionally keep every chunk's own vector so a
+    query can match one PASSAGE rather than the whole document's average. The
+    pooled vector is still written for consumers that only know the old format.
+    """
+    if not text.strip():
+        return [], None
+    big = len(text) >= _CHUNK_THRESHOLD
+    cap = _CHUNK_MAX_STORED if big else _MAX_CHUNKS
+    raw = [text[i:i + _CHUNK_CHARS] for i in range(0, len(text), _CHUNK_CHARS)][:cap]
+    offs = list(range(0, len(text), _CHUNK_CHARS))[:cap]
+    vecs = [embed(c) for c in raw]
+    pooled = _mean_pool(vecs)
+    if not big:
+        return pooled, None
+    return pooled, [{"off": o, "vec": v} for o, v in zip(offs, vecs) if v]
+
+
 def cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity in [-1, 1]; how close two meaning-coordinates point."""
     if not a or not b or len(a) != len(b):
@@ -197,6 +245,18 @@ def build_index(vault: Path, verbose: bool = True) -> dict:
             cache = json.loads(index_path.read_text())
         except Exception:
             cache = {}
+    # Invalidate the whole cache when the embedding model OR the chunk geometry
+    # changed. Without this, unchanged notes keep vectors from the PREVIOUS model
+    # (or previous chunk boundaries) while the header advertises the new one - the
+    # exact silent-mixing bug that made the 2026-07-30 bge-m3 switch require
+    # deleting the index by hand. Now a param change simply forces a full rebuild.
+    _prev = (cache.get("model"), cache.get("chunk_chars"), cache.get("chunk_threshold"))
+    _now = (EMBED_MODEL, _CHUNK_CHARS, _CHUNK_THRESHOLD)
+    if cache and _prev != _now:
+        if verbose:
+            print(f"  [cache] build params changed {_prev} -> {_now}; ignoring cached vectors",
+                  file=sys.stderr)
+        cache = {}
     old = cache.get("notes", {})
     new: dict = {}
     embedded = reused = skipped = failed = 0
@@ -222,23 +282,33 @@ def build_index(vault: Path, verbose: bool = True) -> dict:
         if not embed_text.strip():
             continue
         try:
-            vec = embed_note(embed_text)
+            vec, chunk_recs = embed_note_detail(embed_text)
         except Exception as e:  # one bad note must not abort a 1000-note run
             failed += 1
             if verbose:
                 print(f"  [skip] {rel}: {e}", file=sys.stderr)
             continue
         new[rel] = {"hash": h, "title": md.stem, "vec": vec}
+        if chunk_recs:
+            new[rel]["chunks"] = chunk_recs
         embedded += 1
         if verbose and embedded % 50 == 0:
             print(f"  embedded {embedded} notes...", file=sys.stderr)
 
-    out = {"model": EMBED_MODEL, "notes": new}
+    n_chunked = sum(1 for v in new.values() if v.get("chunks"))
+    n_chunkvecs = sum(len(v.get("chunks") or ()) for v in new.values())
+    out = {
+        "model": EMBED_MODEL,
+        "chunk_chars": _CHUNK_CHARS,
+        "chunk_threshold": _CHUNK_THRESHOLD,
+        "notes": new,
+    }
     index_path.write_text(json.dumps(out), encoding="utf-8")
     if verbose:
         print(
             f"[semantic] indexed {len(new)} notes ({embedded} new, {reused} cached, "
-            f"{skipped} excluded, {failed} failed) -> {index_path}",
+            f"{skipped} excluded, {failed} failed; {n_chunked} chunk-level with "
+            f"{n_chunkvecs} chunk vectors) -> {index_path}",
             file=sys.stderr,
         )
     return out
@@ -257,10 +327,20 @@ def load_index(vault: Path) -> dict:
 def semantic_search(query: str, index: dict, limit: int = 10) -> list[dict]:
     """Rank notes by meaning-distance from the query."""
     qvec = embed(query)
-    scored = [
-        {"path": rel, "title": n["title"], "score": cosine(qvec, n["vec"])}
-        for rel, n in index["notes"].items()
-    ]
+    scored = []
+    for rel, n in index["notes"].items():
+        best = cosine(qvec, n.get("vec") or [])
+        at = None
+        # Chunk-level notes score by their BEST-matching passage, not by the
+        # document average - that is the whole point of storing chunks.
+        for c in (n.get("chunks") or ()):
+            sc = cosine(qvec, c.get("vec") or [])
+            if sc > best:
+                best, at = sc, c.get("off")
+        rec = {"path": rel, "title": n["title"], "score": best}
+        if at is not None:
+            rec["match_off"] = at
+        scored.append(rec)
     scored.sort(key=lambda r: r["score"], reverse=True)
     return scored[:limit]
 

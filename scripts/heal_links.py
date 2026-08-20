@@ -1,40 +1,53 @@
 #!/usr/bin/env python3
 """
-heal_links.py - a closed loop that heals broken wikilinks in an Obsidian vault.
+heal_links.py - heals broken/"wanted" wikilinks in an Obsidian vault.
 
-The loop (this is the whole idea):
-    start once, then ON ITS OWN it repeats:
-        find a broken link
-        decide the fix  (a plain name match - no AI, no API key, no cost)
-        write the fix into the note
-        run the broken-link check again  ->  a countable score
-        repeat until nothing safe is left, the score stops dropping, or the budget runs out
+A wiki-style vault often links a note by its human Title ([[Host iptables rules ...]])
+while the file on disk is kebab-cased (host-iptables-rules-....md). Those links do not
+resolve, so vault_health counts them as "wanted notes". This script repoints each such
+link to the real note when exactly one note is an unambiguous match, preserving the
+original text as a display alias: [[kebab-basename|Host iptables rules ...]].
 
-This file IS the loop. vault_health's check is the score. You press start one time.
-It is "closed" on purpose: bounded, safe matches only, a hard recount every pass.
+Matching is deterministic and safe:
+  1. exact stem/alias match,
+  2. slug match - lowercase both sides and collapse every run of non-alphanumeric
+     characters to a single space, so "Title Case", "kebab-case", punctuation and
+     stray slashes all compare equal (this is what resolves the Title<->kebab case),
+  3. a last-resort fuzzy match (difflib) only when exactly one close name exists.
+Ambiguous links (two or more matches) and links with no match are counted and left
+alone - those judgment calls belong to the AI triage loop (triage_links.py).
 
-No AI on purpose: this loop only repoints a link when exactly one note is a clear
-name match. Ambiguous links (two or more near matches) and links with no match at
-all are counted and left alone - judgment calls belong to the AI triage loop,
-triage_links.py, which sorts dangling links into keep / create / delete.
+The score is vault_health.check_wanted_notes, so this count == the health check's count.
 
 Look-only (changes nothing):
-    uv run scripts/heal_links.py --path "/vault" --dry-run
-Run it for real, bounded to N safe fixes, recounting each pass so you can watch:
-    uv run scripts/heal_links.py --path "/vault" --apply --max 15
+    python scripts/heal_links.py --path "/vault" --dry-run
+Heal everything safe in one fast pass (recount once at the end):
+    python scripts/heal_links.py --path "/vault" --batch
+Incremental loop, bounded to N fixes, recounting each pass so you can watch:
+    python scripts/heal_links.py --path "/vault" --apply --max 15
 """
 import argparse
 import re
-from collections import Counter
+from collections import Counter, defaultdict
 from difflib import get_close_matches
 from pathlib import Path
 
 # reuse the EXACT detection the health check uses, so our count == its count
-from vault_health import load_vault, check_broken_links
+from vault_health import load_vault, check_wanted_notes
 
 DECORATION = re.compile(r"[#|].*$")          # a #heading anchor or |display alias
-LINK_IN_MSG = re.compile(r"Broken link \[\[(.+?)\]\]")
+LINK_IN_MSG = re.compile(r"\[\[(.+?)\]\] - wanted by ")
+NON_ALNUM = re.compile(r"[^a-z0-9]+")         # any run of non-alphanumerics
 PLACEHOLDER = set("*{}<>")                    # template/glob junk, never auto-fix
+
+
+def slugify(text: str) -> str:
+    """Lowercase and collapse every non-alphanumeric run to one space.
+
+    "Host iptables rules", "host-iptables-rules" and "Flat /24 LAN" all normalize to a
+    space-joined token stream, so a Title-cased wikilink matches its kebab-cased file.
+    """
+    return NON_ALNUM.sub(" ", text.lower()).strip()
 
 
 def base_target(link: str) -> str:
@@ -45,22 +58,39 @@ def base_target(link: str) -> str:
 
 
 def index_notes(notes):
+    """Return (name_to_rel, stems, slug_to_rels).
+
+    name_to_rel: exact lowercased stem/alias -> rel (first wins).
+    stems:       lowercased stems, for the fuzzy fallback.
+    slug_to_rels: slug -> set of rels (a set so collisions read as ambiguous).
+    """
     name_to_rel = {}
+    slug_to_rels = defaultdict(set)
     for rel, note in notes.items():
-        name_to_rel.setdefault(note["stem"].lower(), rel)
+        stem = note["stem"]
+        name_to_rel.setdefault(stem.lower(), rel)
+        slug_to_rels[slugify(stem)].add(rel)
         for a in note["aliases"]:
             name_to_rel.setdefault(a.lower(), rel)
+            slug_to_rels[slugify(a)].add(rel)
     stems = list({note["stem"].lower() for note in notes.values()})
-    return name_to_rel, stems
+    return name_to_rel, stems, slug_to_rels
 
 
-def classify(link, name_to_rel, stems):
-    base = base_target(link).lower()
+def classify(link, name_to_rel, stems, slug_to_rels):
+    base = base_target(link)
     if not base:
         return "skip", None
-    if base in name_to_rel:
-        return "already_real", name_to_rel[base]
-    near = get_close_matches(base, stems, n=2, cutoff=0.84)
+    low = base.lower()
+    if low in name_to_rel:
+        return "already_real", name_to_rel[low]
+    # deterministic slug match on the FULL link (base_target mangles slashes like "/24")
+    rels = slug_to_rels.get(slugify(link))
+    if rels:
+        if len(rels) == 1:
+            return "easy_fix", next(iter(rels))
+        return "ask_claude", sorted(rels)
+    near = get_close_matches(low, stems, n=2, cutoff=0.84)
     if len(near) == 1:
         return "easy_fix", name_to_rel[near[0]]
     if len(near) > 1:
@@ -77,40 +107,87 @@ def is_safe(link, target_rel):
     return True
 
 
-def find_next_safe_fix(broken, name_to_rel, stems, vault):
-    """Return the next (rel, link, new_stem) we can safely fix, or None."""
-    for iss in broken:
+def _rewrite(text, link, new_stem):
+    """Repoint a bare [[link]] to [[new_stem|link]], keeping the readable title.
+
+    Returns (new_text, count_replaced). Only bare links are touched; an already-aliased
+    [[x|y]] is never matched here because check_wanted_notes reports the target only.
+    """
+    literal = f"[[{link}]]"
+    n = text.count(literal)
+    if n:
+        text = text.replace(literal, f"[[{new_stem}|{link}]]")
+    return text, n
+
+
+def _collect_safe(wanted, name_to_rel, stems, slug_to_rels):
+    """Bucket every wanted link and return per-file safe fixes: rel -> [(link, new_stem)]."""
+    buckets = Counter()
+    per_file = defaultdict(list)
+    seen = set()
+    for iss in wanted:
         m = LINK_IN_MSG.search(iss["message"])
         if not m:
             continue
         link, rel = m.group(1), iss["files"][0]
-        kind, target = classify(link, name_to_rel, stems)
+        kind, target = classify(link, name_to_rel, stems, slug_to_rels)
+        buckets[kind] += 1
         if kind != "easy_fix" or not is_safe(link, target):
             continue
-        new_stem = Path(target).stem
-        literal = f"[[{link}]]"
-        if literal in (vault / rel).read_text(encoding="utf-8", errors="replace"):
-            return rel, link, new_stem
-    return None
+        if (rel, link) in seen:
+            continue
+        seen.add((rel, link))
+        per_file[rel].append((link, Path(target).stem))
+    return per_file, buckets
 
 
 def dry_run(vault):
     notes = load_vault(vault)
-    broken = check_broken_links(notes, vault)
-    name_to_rel, stems = index_notes(notes)
-    buckets, safe = Counter(), 0
-    for iss in broken:
-        m = LINK_IN_MSG.search(iss["message"])
-        if not m:
-            continue
-        kind, target = classify(m.group(1), name_to_rel, stems)
-        buckets[kind] += 1
-        if kind == "easy_fix" and is_safe(m.group(1), target):
-            safe += 1
-    print(f"\nBroken links: {sum(buckets.values())}")
-    print(f"  safe to auto-fix right now (no AI): {safe}")
-    print(f"  left for AI triage (ambiguous or no match): {buckets['ask_claude'] + buckets['no_target']}")
+    wanted = check_wanted_notes(notes, vault)
+    per_file, buckets = _collect_safe(wanted, *index_notes(notes))
+    safe = sum(len(v) for v in per_file.values())
+    print(f"\nWanted links: {sum(buckets.values())}")
+    print(f"  safe to auto-fix right now (no AI): {safe} across {len(per_file)} files")
+    print(f"  already real (alias/path):          {buckets['already_real']}")
+    print(f"  left for AI triage (ambiguous):     {buckets['ask_claude']}")
+    print(f"  no match at all:                    {buckets['no_target']}")
     print("\nDRY RUN: nothing changed.\n")
+
+
+def apply_batch(vault):
+    print("\nBatch heal: one pass, all unambiguous fixes, single recount.\n")
+    notes = load_vault(vault)
+    wanted = check_wanted_notes(notes, vault)
+    before = len(wanted)
+    per_file, buckets = _collect_safe(wanted, *index_notes(notes))
+
+    applied = files_touched = 0
+    for rel, fixes in per_file.items():
+        path = vault / rel
+        text = path.read_text(encoding="utf-8", errors="replace")
+        changed = 0
+        for link, new_stem in fixes:
+            text, n = _rewrite(text, link, new_stem)
+            changed += n
+        if changed:
+            path.write_text(text, encoding="utf-8")
+            applied += changed
+            files_touched += 1
+
+    after = len(check_wanted_notes(load_vault(vault), vault))
+    print(f"  wanted links before:        {before}")
+    print(f"  safe auto-fixes applied:    {applied} (across {files_touched} files)")
+    print(f"  left for AI triage:         {buckets['ask_claude']}")
+    print(f"  no match at all:            {buckets['no_target']}")
+    print(f"  wanted links after:         {after}\n")
+
+
+def find_next_safe_fix(per_file):
+    for rel, fixes in per_file.items():
+        if fixes:
+            link, new_stem = fixes[0]
+            return rel, link, new_stem
+    return None
 
 
 def apply_loop(vault, max_fixes):
@@ -118,11 +195,11 @@ def apply_loop(vault, max_fixes):
     fixed = 0
     while fixed < max_fixes:
         notes = load_vault(vault)
-        broken = check_broken_links(notes, vault)
-        before = len(broken)
-        name_to_rel, stems = index_notes(notes)
+        wanted = check_wanted_notes(notes, vault)
+        before = len(wanted)
+        per_file, _ = _collect_safe(wanted, *index_notes(notes))
 
-        nxt = find_next_safe_fix(broken, name_to_rel, stems, vault)
+        nxt = find_next_safe_fix(per_file)
         if nxt is None:
             print("  no more safe fixes left. stopping.")
             break
@@ -130,13 +207,14 @@ def apply_loop(vault, max_fixes):
         rel, link, new_stem = nxt
         path = vault / rel
         text = path.read_text(encoding="utf-8", errors="replace")
-        path.write_text(text.replace(f"[[{link}]]", f"[[{new_stem}]]"), encoding="utf-8")
+        text, _ = _rewrite(text, link, new_stem)
+        path.write_text(text, encoding="utf-8")
 
-        after = len(check_broken_links(load_vault(vault), vault))
+        after = len(check_wanted_notes(load_vault(vault), vault))
         fixed += 1
         print(f"  fix {fixed:>2}: [[{link}]]")
-        print(f"           -> [[{new_stem}]]   in {rel}")
-        print(f"           broken links: {before} -> {after}")
+        print(f"           -> [[{new_stem}|{link}]]   in {rel}")
+        print(f"           wanted links: {before} -> {after}")
 
         if after >= before:
             print("  count did not drop - no-progress guard tripped, stopping.")
@@ -150,10 +228,13 @@ def main():
     ap.add_argument("--path", required=True)
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--apply", action="store_true")
+    ap.add_argument("--batch", action="store_true", help="heal all safe fixes in one fast pass")
     ap.add_argument("--max", type=int, default=15)
     args = ap.parse_args()
     vault = Path(args.path).expanduser()
-    if args.apply:
+    if args.batch:
+        apply_batch(vault)
+    elif args.apply:
         apply_loop(vault, args.max)
     else:
         dry_run(vault)

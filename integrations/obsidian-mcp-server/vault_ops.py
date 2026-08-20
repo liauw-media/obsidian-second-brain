@@ -17,7 +17,8 @@ import re
 import urllib.request
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from difflib import get_close_matches
+from typing import Any, Dict, List, Optional, Tuple
 
 _VAULT_ENV = "OBSIDIAN_VAULT_PATH"
 
@@ -124,6 +125,23 @@ def _embed_query(text: str) -> Optional[List[float]]:
     return None
 
 
+def _passage(vault: Path, rel: str, off: int) -> str:
+    """Snippet taken from the chunk that MATCHED, not from the file head.
+
+    `off` is a CHARACTER offset - the index builder slices the decoded string, so
+    the file must be read as text and sliced by characters. Byte-seeking would
+    mis-align on any multi-byte character (this vault is full of German umlauts
+    and box-drawing). Deliberately does NOT use _read_safe(): its _MAX_FILE_BYTES
+    cap of 200 KB is smaller than the largest chunk-level notes (up to 338 KB), so
+    it would silently return nothing for exactly the documents this exists for.
+    """
+    try:
+        t = (vault / rel).read_text(encoding="utf-8", errors="ignore")
+    except OSError:
+        return ""
+    return " ".join(t[off:off + _SNIPPET_CHARS].split())
+
+
 def _semantic_fuse(
     query: str, lexical: List[Dict[str, Any]], vault: Path, limit: int
 ) -> Optional[List[Dict[str, Any]]]:
@@ -142,22 +160,49 @@ def _semantic_fuse(
         qvec = _embed_query(query)
         if not qvec:
             return None
-        sem = sorted(
-            ({"path": rel, "title": n.get("title", rel), "score": _cosine(qvec, n["vec"])}
-             for rel, n in notes.items() if n.get("vec")),
-            key=lambda r: r["score"], reverse=True,
-        )[:_FUSE_DEPTH]
+        # CHUNK-LEVEL RETRIEVAL (2026-07-30). Long notes carry an extra vector per
+        # chunk under n["chunks"]; score them by their BEST-matching passage rather
+        # than the mean-pooled document centroid. Reading .get("chunks") means an
+        # index WITHOUT chunks behaves exactly as before - the format is additive.
+        def _best(n):
+            """(score, offset) - offset is None when the note vector won."""
+            best, off = _cosine(qvec, n.get("vec") or []), None
+            for c in (n.get("chunks") or ()):
+                sc = _cosine(qvec, c.get("vec") or [])
+                if sc > best:
+                    best, off = sc, c.get("off")
+            return best, off
+        _scored = []
+        for rel, n in notes.items():
+            if not n.get("vec"):
+                continue
+            sc, off = _best(n)
+            _scored.append({"path": rel, "title": n.get("title", rel), "score": sc, "off": off})
+        sem = sorted(_scored, key=lambda r: r["score"], reverse=True)[:_FUSE_DEPTH]
         lex_rank = {r["path"]: i for i, r in enumerate(lexical[:_FUSE_DEPTH])}
         sem_rank = {r["path"]: i for i, r in enumerate(sem)}
         snippet = {r["path"]: r.get("snippet", "") for r in lexical}
         title = {r["path"]: r["title"] for r in lexical}
         for r in sem:
             title.setdefault(r["path"], r["title"])
+        match_off = {r["path"]: r["off"] for r in sem if r.get("off") is not None}
         fused = []
         for p in set(lex_rank) | set(sem_rank):
             s = (1.0 / (_RRF_K + lex_rank[p]) if p in lex_rank else 0.0) \
                 + (1.0 / (_RRF_K + sem_rank[p]) if p in sem_rank else 0.0)
-            fused.append({"path": p, "title": title.get(p, p), "snippet": snippet.get(p, ""), "score": s})
+            snip = snippet.get(p, "")
+            mo = match_off.get(p)
+            if mo is not None:
+                # Prefer the passage that actually matched. Without this a hit deep
+                # inside a 338 KB standard is presented with the document's opening
+                # lines, which say nothing about why it ranked.
+                ps = _passage(vault, p, mo)
+                if ps:
+                    snip = ps
+            rec = {"path": p, "title": title.get(p, p), "snippet": snip, "score": s}
+            if mo is not None:
+                rec["match_off"] = mo
+            fused.append(rec)
         fused.sort(key=lambda r: r["score"], reverse=True)
         out = fused[:limit]
         for r in out:
@@ -549,13 +594,46 @@ def _parse_command(md: Path):
     return meta, body
 
 
+_FRONTMATTER_RE = re.compile(r"\A\ufeff?\s*---\r?\n.*?\r?\n---[ \t]*\r?\n?", re.S)
+
+
+def _strip_frontmatter(text: str) -> str:
+    """Drop a leading YAML frontmatter block, if present.
+
+    Why: _snippet() centres on the first query-term hit, and in this vault the
+    first hit is very often inside the frontmatter's `tags:`/`aliases:`/`title:`.
+    A search for "features" therefore returned
+    `--- type: reference date: 2026-07-07 tags: - jointhesip - features …`
+    which tells a reader nothing about the note. Frontmatter is metadata, not
+    prose, so it is excluded from the snippet window entirely.
+
+    Only a block at the very start counts (a `---` horizontal rule later in the
+    body must not be mistaken for a frontmatter terminator), hence the start-of-
+    string anchor and the non-greedy body. A stray BOM is tolerated.
+    """
+    return _FRONTMATTER_RE.sub("", text, count=1)
+
+
 def _snippet(text: str, terms: List[str]) -> str:
-    low = text.lower()
+    body = _strip_frontmatter(text)
+    if not body.strip():          # a note that is nothing but frontmatter
+        body = text
+    low = body.lower()
     pos = min((low.find(t) for t in terms if low.find(t) >= 0), default=-1)
     if pos < 0:
-        return text.strip()[:_SNIPPET_CHARS]
+        # No term in the prose (it matched only in metadata, or only in the
+        # title). Opening prose is still far more informative than YAML.
+        return " ".join(body.strip()[:_SNIPPET_CHARS].split())
     start = max(0, pos - _SNIPPET_CHARS // 2)
-    return text[start : start + _SNIPPET_CHARS].replace("\n", " ").strip()
+    # Snap the window start to a word boundary so the snippet does not open
+    # mid-word ("ck ([[backup-remediation..." instead of "...re-check)").
+    # Bounded lookahead: never skip past the matched term itself.
+    if start > 0:
+        nxt = body.find(" ", start)
+        if 0 <= nxt < pos:
+            start = nxt + 1
+    out = " ".join(body[start : start + _SNIPPET_CHARS].split())
+    return ("… " + out) if start > 0 else out
 
 
 def _read_safe(path: Path, *, limit: int = 4_000_000) -> Optional[str]:
@@ -623,3 +701,187 @@ def _apply_fields(fm_lines: List[str], fields: Dict[str, str]) -> List[str]:
     for k, v in remaining.items():
         lines.append(f"{k}: {v}")
     return lines
+
+
+# ---------------------------------------------------------------------------
+# heal_links - repoint unresolved [[wikilinks]] at the notes they meant
+# ---------------------------------------------------------------------------
+#
+# A vault links notes by human Title ([[Host iptables rules]]) while the file on
+# disk is kebab-cased (host-iptables-rules.md). Those links do not resolve, so
+# vault_health counts them as "wanted notes". This repoints each one at the real
+# note when exactly one is an unambiguous match, preserving the readable text as
+# a display alias: [[host-iptables-rules|Host iptables rules]].
+#
+# Ported from scripts/heal_links.py, which healed 1715 links across 155 notes on
+# 2026-07-08. Two guards are NEW here, because both produce false positives that
+# the standalone script did not have to care about:
+#   * documentation files talk ABOUT wikilinks - vault_health currently reports
+#     {"in": "README.md", "link": "wikilinks"} - and "fixing" those corrupts the
+#     vault's own docs;
+#   * links inside ``` fences are code samples, not references.
+
+# Vault-ROOT docs only. These talk ABOUT wikilinks, so their [[links]] are
+# examples - vault_health really does report {"in": "README.md", "link":
+# "wikilinks"}. Matched on the RELATIVE path, never the bare filename: a
+# filename match also skipped notes/knowledge-web/*/index.md, which are MOCs
+# full of genuine links.
+_HEAL_SKIP_RELS = {"readme.md", "agents.md", "_claude.md", "index.md"}
+_HEAL_PLACEHOLDER = set("*{}<>")
+_HEAL_FENCE_RE = re.compile(r"(```.*?```|~~~.*?~~~|`[^`\n]+`)", re.S)
+_HEAL_NON_ALNUM = re.compile(r"[^a-z0-9]+")
+
+
+def _heal_slug(text: str) -> str:
+    """Collapse every non-alphanumeric run to one space, lowercased.
+
+    Makes "Title Case", "kebab-case" and "Flat /24 LAN" compare equal - which is
+    exactly what resolves a human-titled wikilink to its kebab-cased file.
+    """
+    return _HEAL_NON_ALNUM.sub(" ", text.lower()).strip()
+
+
+def _heal_index(vault: Path):
+    """Return (exact_stem -> rel, [stems], slug -> {rels}).
+
+    slug maps to a SET so a collision reads as ambiguous rather than silently
+    picking one. Aliases are not indexed (stem-only), so a note reachable only by
+    a frontmatter alias reports as ambiguous/no_target rather than being guessed.
+    """
+    name_to_rel: Dict[str, str] = {}
+    slug_to_rels: Dict[str, set] = {}
+    for i, md in enumerate(_iter_notes(vault)):
+        if i >= _MAX_FILES_SCANNED:
+            break
+        rel = str(md.relative_to(vault))
+        name_to_rel.setdefault(md.stem.lower(), rel)
+        slug_to_rels.setdefault(_heal_slug(md.stem), set()).add(rel)
+    return name_to_rel, sorted(name_to_rel), slug_to_rels
+
+
+def _heal_classify(link: str, name_to_rel, stems, slug_to_rels):
+    """-> (kind, target) where kind is resolved|fix|ambiguous|no_target|skip."""
+    base = link.split("#")[0].split("|")[0].strip()
+    if "/" in base:
+        base = base.split("/")[-1]
+    if not base:
+        return "skip", None
+    if any(c in link for c in _HEAL_PLACEHOLDER):
+        return "skip", None
+    low = base.lower()
+    if low in name_to_rel:
+        return "resolved", name_to_rel[low]
+    rels = slug_to_rels.get(_heal_slug(link))
+    if rels:
+        return ("fix", next(iter(rels))) if len(rels) == 1 else ("ambiguous", sorted(rels))
+    near = get_close_matches(low, stems, n=2, cutoff=0.84)
+    if len(near) == 1:
+        return "fix", name_to_rel[near[0]]
+    if len(near) > 1:
+        return "ambiguous", [name_to_rel[n] for n in near]
+    return "no_target", None
+
+
+def _heal_rewrite(text: str, link: str, new_stem: str) -> Tuple[str, int]:
+    """Repoint [[link]] and [[link|alias]], never touching fenced code.
+
+    [[link]]        -> [[new_stem|link]]   (original text kept as the display)
+    [[link|alias]]  -> [[new_stem|alias]]  (author's display text wins)
+    """
+    # If the link and target differ only by punctuation/case, an alias would just
+    # re-display the typo (e.g. a stray trailing backslash from a table cell), so
+    # emit the plain link instead.
+    plain = _heal_slug(link) == _heal_slug(new_stem)
+    bare = f"[[{link}]]"
+    aliased = re.compile(r"\[\[" + re.escape(link) + r"\|([^\]]*)\]\]")
+    total = 0
+    out = []
+    for seg in _HEAL_FENCE_RE.split(text):
+        if seg.startswith("```") or seg.startswith("~~~") or (
+            seg.startswith("`") and seg.endswith("`")
+        ):
+            out.append(seg)  # code - never rewrite
+            continue
+        total += seg.count(bare)
+        seg = seg.replace(bare, f"[[{new_stem}]]" if plain else f"[[{new_stem}|{link}]]")
+        seg, n = aliased.subn(lambda m: f"[[{new_stem}|{m.group(1)}]]", seg)
+        total += n
+        out.append(seg)
+    return "".join(out), total
+
+
+def heal_links(
+    path: Optional[str] = None,
+    dry_run: bool = True,
+    mapping: Optional[Dict[str, str]] = None,
+    limit: int = 200,
+) -> Dict[str, Any]:
+    """Repoint unresolved [[wikilinks]] at real notes, alias-preserving.
+
+    DRY RUN BY DEFAULT - returns what it would do and writes nothing. Only an
+    explicit dry_run=False writes. Ambiguous links and links with no match are
+    reported, never guessed: that judgment belongs to the caller.
+    """
+    vault = resolve_vault()
+    name_to_rel, stems, slug_to_rels = _heal_index(vault)
+    overrides = {k.lower(): v for k, v in (mapping or {}).items()}
+
+    if path:
+        target = (vault / path).resolve()
+        if vault not in target.parents and target != vault:
+            raise ValueError("path escapes the vault")
+        notes = [target] if target.is_file() else []
+    else:
+        notes = list(_iter_notes(vault))[:_MAX_FILES_SCANNED]
+
+    fixes: List[Dict[str, str]] = []
+    proposals: List[Dict[str, Any]] = []
+    skipped: List[Dict[str, str]] = []
+    counts = {"resolved": 0, "fix": 0, "ambiguous": 0, "no_target": 0, "skip": 0}
+    files_written = 0
+    applied = 0
+
+    for md in notes:
+        rel = str(md.relative_to(vault))
+        if rel.lower() in _HEAL_SKIP_RELS:
+            skipped.append({"in": rel, "why": "documentation file - links here are examples"})
+            continue
+        text = _read_safe(md, limit=_MAX_FILE_BYTES)
+        if text is None:
+            continue
+        scan = _HEAL_FENCE_RE.sub(" ", text)  # ignore links inside code
+        per_file: List[Tuple[str, str]] = []
+        for link in dict.fromkeys(_wikilinks(scan)):
+            if link.lower() in overrides:
+                kind, tgt = "fix", overrides[link.lower()]
+            else:
+                kind, tgt = _heal_classify(link, name_to_rel, stems, slug_to_rels)
+            counts[kind] = counts.get(kind, 0) + 1
+            if kind == "fix":
+                if "templates" in [p.lower() for p in str(tgt).split("/")]:
+                    skipped.append({"in": rel, "link": link, "why": "target is a template"})
+                    continue
+                per_file.append((link, Path(tgt).stem))
+                fixes.append({"in": rel, "link": link, "target": Path(tgt).stem})
+            elif kind == "ambiguous":
+                proposals.append({"in": rel, "link": link, "candidates": tgt})
+        if per_file and not dry_run and applied < limit:
+            new = text
+            changed = 0
+            for link, stem in per_file:
+                new, n = _heal_rewrite(new, link, stem)
+                changed += n
+            if changed and new != text:
+                md.write_text(new, encoding="utf-8")
+                files_written += 1
+                applied += changed
+
+    return {
+        "dry_run": dry_run,
+        "counts": counts,
+        "fixes": fixes[:limit],
+        "proposals": proposals[:limit],
+        "skipped": skipped[:limit],
+        "files_written": files_written,
+        "links_rewritten": applied,
+    }
