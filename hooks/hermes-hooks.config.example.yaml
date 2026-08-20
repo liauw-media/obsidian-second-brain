@@ -1,8 +1,8 @@
-# hermes-hooks.cli-config.example.yaml
+# hermes-hooks.config.example.yaml
 #
-# Paste-in template for your Hermes cli-config.yaml. Registers the vault
-# maintenance hook on the on_session_end lifecycle event - the Hermes analog of
-# the Claude PostCompact hook.
+# Paste-in template for the `hooks:` block of your ~/.hermes/config.yaml.
+# Registers the vault maintenance hook on the on_session_end lifecycle event -
+# the Hermes analog of the Claude PostCompact hook.
 #
 # OPT-IN / SHIPS INERT. Registering the hook is not enough: the script no-ops
 # unless BOTH OBSIDIAN_VAULT_PATH and OBSIDIAN_HERMES_HOOK_ENABLED=1 are in the

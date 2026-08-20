@@ -1,16 +1,20 @@
 ---
 description: Create or update today's daily note - pulls calendar events, overdue tasks, and conversation context
 category: vault
+trigger-mode: proactive
 triggers_en: ["todays note", "create todays daily", "open daily", "today daily note"]
+triggers_es: ["nota de hoy", "crea la diaria de hoy", "abre mi diaria", "abre la nota de hoy", "dame mi diaria"]
+triggers_pt: ["nota de hoje", "crie a nota diária de hoje", "abra a diária", "nota diária de hoje"]
+triggers_zh: ["打开今天的日记", "创建今天的每日笔记", "更新今天的日记", "看看今天要做什么"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-daily`:
 
 1. Read `_CLAUDE.md` first if it exists in the vault root
-2. Read `CRITICAL_FACTS.md` for timezone
+2. If `CRITICAL_FACTS.md` exists in the vault root, read it for timezone; otherwise use the system timezone
 
-3. Check if `wiki/daily/YYYY-MM-DD.md` exists for today
-   - If not: read `templates/Daily Note.md`, fill in date fields, create the file
+3. Check if today's `YYYY-MM-DD.md` exists in the daily folder, resolved per `references/folder-map.md` (wiki-style `wiki/daily/`, Obsidian-style `Daily/`)
+   - If not: read the daily-note template (`Templates/Daily Note.md`, or lowercase `templates/` if that is the vault's folder), fill in date fields, create the file
    - If yes: update existing note (inject, don't overwrite)
 
 4. Pull calendar events (if a Google Calendar MCP is connected):
@@ -21,7 +25,7 @@ Use the obsidian-second-brain skill. Execute `/obsidian-daily`:
    - If no calendar MCP is connected, skip silently (don't error)
 
 5. Pull overdue and due-today tasks from kanban boards:
-   - Scan `boards/` for items with `@{date}` that match today or are past due
+   - Scan the boards folder (resolved per `references/folder-map.md`) for items with `@{date}` that match today or are past due
    - Add to the daily note's Focus section with priority markers
 
 6. Scan the current conversation for anything relevant to today:
@@ -36,6 +40,6 @@ Use the obsidian-second-brain skill. Execute `/obsidian-daily`:
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

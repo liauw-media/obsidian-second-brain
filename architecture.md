@@ -8,25 +8,25 @@ Last reviewed against commit `ff0319c` (2026-06-05).
 
 ## System overview
 
-obsidian-second-brain is a cross-CLI **skill** (not a plugin, not a hosted service) that turns any Obsidian vault into an AI-first second brain. One platform-neutral command source compiles to six AI CLIs - Claude Code, Codex CLI, Gemini CLI, OpenCode, Hermes, Pi - through a build-time adapter pattern. At runtime a slash command reads and writes the user's vault as plain markdown; commands shell out to Python helpers for anything deterministic (vault health, research fetches, codebase scans).
+obsidian-second-brain is a cross-CLI **skill** (not a plugin, not a hosted service) that turns any Obsidian vault into an AI-first second brain. One platform-neutral command source compiles to seven AI CLIs - Claude Code, Codex CLI, Gemini CLI, OpenCode, Antigravity, Hermes, Pi - through a build-time adapter pattern. At runtime a slash command reads and writes the user's vault as plain markdown; commands shell out to Python helpers for anything deterministic (vault health, research fetches, codebase scans).
 
-- **44 commands**, grouped by `category:` frontmatter: vault 16, thinking 13, research 8, meta 7.
-- **43 commands are cross-platform.** Only `/obsidian-calendar` carries `exclude: [codex-cli, gemini-cli, opencode, hermes]` because it depends on the Google Calendar MCP, so it ships on Claude Code and Pi only. The Codex / Gemini / OpenCode / Hermes builds ship 43.
+- **46 commands**, grouped by `category:` frontmatter: vault 16, thinking 14, research 8, meta 8.
+- **45 commands are cross-platform.** Only `/obsidian-calendar` carries `exclude: [codex-cli, gemini-cli, opencode, hermes, pi, agent-skills]` because it depends on the Google Calendar MCP, so it ships on Claude Code only. The Codex / Gemini / OpenCode / Hermes / Pi / Agent Skills builds ship 45.
 - A research toolkit that is key-less by default (free public sources) and uses Grok + Perplexity + Gemini when keys are present.
 - An opt-in background agent plus optional user-scheduled agents.
 - MIT licensed.
 
-The AI-first vault rule ties it all together: every note a command writes is designed for future-Claude retrieval, not human reading. The canonical spec is `references/ai-first-rules.md`, referenced from `_CLAUDE.md` Section 0 and from every command that writes to the vault.
+The AI-first vault rule ties it all together: every note a command writes is designed for future agent retrieval, not human reading. The canonical spec is `references/ai-first-rules.md`, referenced from `_CLAUDE.md` Section 0 and from every command that writes to the vault.
 
 ---
 
 ## The adapter pattern (the core idea)
 
-`commands/` is the single source of truth. The build compiles it per platform instead of maintaining six command sets.
+`commands/` is the single source of truth. The build compiles it per platform instead of maintaining seven command sets.
 
 - `commands/<name>.md` uses Claude Code's slash-command shape and declares `description:`, `category:`, `triggers_en:`, and optional `exclude:` frontmatter.
 - `scripts/build.sh` orchestrates the `adapters/` layer. `bash scripts/build.sh` builds all platforms; `--platform <name>` builds one.
-- The **Claude Code adapter is an identity copy**. The other five adapters (Codex CLI, Gemini CLI, OpenCode, Hermes, Pi) emit a dispatcher file at the dist root (`AGENTS.md`, `GEMINI.md`, or the Pi/Hermes equivalent) with an auto-generated routing table built from each command's `description:`, grouped by `category:` then language, plus the command bodies under `.codex/commands/` (or `.gemini/`, `.opencode/`, `.pi/`, Hermes skills).
+- The **Claude Code adapter is an identity copy**. The other six adapters translate per platform: `codex-cli`, `hermes`, and `agent-skills` emit **native skills** (one `SKILL.md` per command; `agent-skills` is a single spec-compliant `.agents/skills/` tree that Codex CLI, OpenCode, and Google Antigravity all read, with a shared `obsidian-core` engine skill), `pi` emits a Pi package (`.pi/prompts/` + `.pi/skills/`), and `gemini-cli` / `opencode` emit a dispatcher file (`GEMINI.md` / `AGENTS.md`) with an auto-generated routing table built from each command's `description:`, grouped by `category:` then language, plus the command bodies under `.gemini/` / `.opencode/`.
 - Claude-specific wording is neutralized for the other CLIs (for example `Read tool` becomes `read files`).
 - Output lands in `dist/<platform>/`, which is gitignored and regenerated - never hand-edited.
 
@@ -38,7 +38,7 @@ The AI-first vault rule ties it all together: every note a command writes is des
 
 | Path | Role |
 |---|---|
-| `commands/` | 44 slash-command definitions, one `.md` each. The platform-neutral source and the product surface. |
+| `commands/` | 45 slash-command definitions, one `.md` each. The platform-neutral source and the product surface. |
 | `references/` | Shared specs the commands link to. `ai-first-rules.md` is the canonical, non-negotiable vault-write spec. |
 | `scripts/` | Python and Shell engine: build orchestrator, vault tooling, research toolkit, codebase scanner. |
 | `adapters/` | Platform translation layer. `lib.sh` plus one `adapter.sh` per CLI. |
@@ -53,10 +53,10 @@ The AI-first vault rule ties it all together: every note a command writes is des
 
 ```
 obsidian-second-brain/
-|-- commands/            # 44 command .md files (the source)
+|-- commands/            # 45 command .md files (the source)
 |-- references/          # ai-first-rules.md (canonical) + schemas + templates + bases/
 |-- scripts/             # build.sh, lib.sh, vault tooling, research/, architect_scan.py, ...
-|-- adapters/            # lib.sh + {claude-code,codex-cli,gemini-cli,opencode,hermes,pi}/adapter.sh
+|-- adapters/            # lib.sh + {claude-code,codex-cli,gemini-cli,opencode,hermes,pi,agent-skills}/adapter.sh
 |-- hooks/               # validate-ai-first.sh, load_vault_context.py, obsidian-bg-agent.sh
 |-- dist/                # build output per platform (gitignored)
 |-- tests/               # smoke tests + CI fixtures
@@ -71,7 +71,7 @@ obsidian-second-brain/
 ```mermaid
 graph TD
   REF["references/<br/>specs (ai-first-rules.md = canonical)"]
-  CMD["commands/<br/>44 .md, platform-neutral source"]
+  CMD["commands/<br/>45 .md, platform-neutral source"]
   SCR["scripts/<br/>engine + research toolkit + build.sh"]
   ADP["adapters/<br/>lib.sh + 6 platform adapters"]
   HK["hooks/<br/>validate-ai-first, context loader, bg-agent"]
@@ -91,7 +91,7 @@ graph TD
 
 ## Command categories
 
-Commands are grouped by `category:` frontmatter, not by folder. Counts reflect the current `commands/` source. `/obsidian-calendar` is excluded from the Codex / Gemini / OpenCode / Hermes builds (it needs the Google Calendar MCP), so it ships on Claude Code and Pi only.
+Commands are grouped by `category:` frontmatter, not by folder. Counts reflect the current `commands/` source. `/obsidian-calendar` is excluded from the Codex / Gemini / OpenCode / Hermes / Pi / Agent Skills builds (it needs the Google Calendar MCP), so it ships on Claude Code only.
 
 ### Vault (16)
 Vault management: saving, organizing, searching, scheduling, maintaining.
@@ -117,9 +117,9 @@ Bootstrap, audit, export, visualize, document, and extend the system itself.
 
 ## The AI-first rule (non-negotiable)
 
-Every command that writes to a vault must follow `references/ai-first-rules.md`. Notes are built for future-Claude retrieval:
+Every command that writes to a vault must follow `references/ai-first-rules.md`. Notes are built for future agent retrieval:
 
-- A `## For future Claude` preamble at the top of every note.
+- A `## For future agent` preamble at the top of every note.
 - Rich frontmatter: `type`, `date`, `tags`, `ai-first: true`, plus type-specific fields.
 - `[[wikilinks]]` for every person, project, idea, decision, and concept referenced.
 - External claims carry recency markers like `(as of 2026-04, source.com)` with the source URL inline.
@@ -135,7 +135,7 @@ Every command that writes to a vault must follow `references/ai-first-rules.md`.
 Lives under `scripts/research/`. One Python entry point per research command plus a `lib/` layer.
 
 - **Keyed mode:** Perplexity Sonar for web research, Grok (xAI Agent Tools API, default grok-4) for X and live search, Gemini File Search for vault-grounded NotebookLM queries.
-- **Free key-less mode:** when no Perplexity key is set, `/research` and `/research-deep` fall back to roughly ten free public sources (Wikipedia, HackerNews, arXiv, Reddit, Lobsters, dev.to, OpenAlex, Semantic Scholar, CrossRef, DuckDuckGo) via `scripts/research/lib/`, and Claude synthesizes the dossier. This removed the project's single biggest adoption barrier - the toolkit no longer hard-errors without a paid key.
+- **Free key-less mode:** when no Perplexity key is set, `/research` and `/research-deep` fall back to roughly ten free public sources (Wikipedia, HackerNews, arXiv, Reddit, Lobsters, dev.to, OpenAlex, Semantic Scholar, CrossRef, DuckDuckGo), plus Tavily/Brave when keyed via `scripts/research/lib/`, and Claude synthesizes the dossier. This removed the project's single biggest adoption barrier - the toolkit no longer hard-errors without a paid key.
 - **Other ingest:** `/youtube` (transcript via `youtube-transcript-api`), `/podcast` (RSS via `feedparser`).
 
 Configuration is read from the environment or `~/.config/obsidian-second-brain/.env`; `OBSIDIAN_VAULT_PATH` is required so notes save to the right vault on any machine.
@@ -148,7 +148,7 @@ Python dependencies (`pyproject.toml`, managed via `uv`): `openai`, `requests`, 
 
 Hooks enforce the rules mechanically instead of relying on the model to remember them. They are Claude Code specific - the other CLIs have no hook system, so there the AI-first rule rests on the in-body command instructions.
 
-- **`validate-ai-first.sh`** (`PostToolUse` on Write/Edit). Warns when a vault markdown write is missing AI-first frontmatter or the `## For future Claude` preamble. Check 5 is the substitution-character gate (em-dash, curly quotes, Unicode math).
+- **`validate-ai-first.sh`** (`PostToolUse` on Write/Edit). Warns when a vault markdown write is missing AI-first frontmatter or the `## For future agent` preamble. Check 5 is the substitution-character gate (em-dash, curly quotes, Unicode math).
 - **`load_vault_context.py`** (`SessionStart`). Injects `_CLAUDE.md` / `index.md` / recent log once per session so commands do not re-read the operating manual every turn.
 - **`obsidian-bg-agent.sh`** (`PostCompact`, opt-in). On context compaction it spawns a headless `claude -p` in the vault to propagate the session summary into notes. Ships inert; arms only with `OBSIDIAN_BG_AGENT_ENABLED=1`. It only adds or updates - never deletes, archives, or merges.
 

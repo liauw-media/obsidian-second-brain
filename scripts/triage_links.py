@@ -18,7 +18,8 @@ from collections import Counter
 from datetime import date
 from pathlib import Path
 
-from vault_health import load_vault, check_wanted_notes
+from note_io import read_exact, write_exact
+from vault_health import check_wanted_notes, load_vault, load_vault_config, replace_outside_code
 
 LINK_IN_MSG = re.compile(r"\[\[(.+?)\]\]")
 MODEL = "claude-haiku-4-5"
@@ -80,8 +81,9 @@ def load_verdicts(path):
 
 
 def apply_verdicts(vault, verdicts, create_cap):
-    broken = check_wanted_notes(load_vault(vault), vault)
-    deleted, created = 0, 0
+    broken = check_wanted_notes(load_vault(vault, load_vault_config(vault)), vault,
+                                    load_vault_config(vault))
+    deleted, created, skipped = 0, 0, 0
     seen_create = set()
     for iss in broken:
         m = LINK_IN_MSG.search(iss["message"])
@@ -91,9 +93,16 @@ def apply_verdicts(vault, verdicts, create_cap):
         v = verdicts.get(link)
         if v == "DELETE":
             path = vault / rel
-            text = path.read_text(encoding="utf-8", errors="replace")
-            if f"[[{link}]]" in text:
-                path.write_text(text.replace(f"[[{link}]]", link), encoding="utf-8")
+            text = read_exact(path)
+            if text is None:
+                print(f"  SKIPPED (not valid UTF-8, left untouched): {rel}")
+                skipped += 1
+                continue
+            # Delete only prose occurrences: a [[link]] inside a code fence or
+            # inline code is example text the counter never reported.
+            new_text, n = replace_outside_code(text, f"[[{link}]]", link)
+            if n:
+                write_exact(path, new_text)
                 deleted += 1
         elif v == "CREATE" and link not in seen_create and created < create_cap:
             seen_create.add(link)
@@ -101,20 +110,32 @@ def apply_verdicts(vault, verdicts, create_cap):
             # Stubs land in a single holding folder marked `type: stub`; a human or a
             # later Claude pass classifies and moves them. Link resolution is by
             # filename, so the stub heals the broken link from here just the same.
-            stub = vault / "wiki" / "stubs" / f"{link}.md"
-            if not stub.exists():
-                stub.parent.mkdir(parents=True, exist_ok=True)
+            stubs_root = (vault / "wiki" / "stubs").resolve()
+            stub = stubs_root / f"{link}.md"
+            # Containment guard: the link text is vault content shaped by an LLM verdict,
+            # so a crafted or hallucinated [[../../x]] or [[/abs/x]] must never write
+            # outside the stubs folder. Resolve and confirm the target stays inside it;
+            # skip (never crash the batch) if it escapes.
+            try:
+                safe_stub = stub.resolve()
+                safe_stub.relative_to(stubs_root)
+            except (ValueError, OSError):
+                print(f"  SKIPPED (unsafe link path, not created): [[{link}]]")
+                skipped += 1
+                continue
+            if not safe_stub.exists():
+                safe_stub.parent.mkdir(parents=True, exist_ok=True)
                 today = date.today().isoformat()
-                stub.write_text(
+                safe_stub.write_text(
                     f"---\ntype: stub\ndate: {today}\ntags: [stub]\nai-first: true\n---\n\n"
-                    f"## For future Claude\n\nStub created by link triage on {today}. "
+                    f"## For future agent\n\nStub created by link triage on {today}. "
                     f"`{link}` was referenced across the vault but had no note. "
                     f"Classify it (person, project, concept, decision, etc.), fill it from "
                     f"context, set the real `type:`, and move it to the matching folder when "
                     f"you next encounter it.\n",
                     encoding="utf-8")
                 created += 1
-    return deleted, created
+    return deleted, created, skipped
 
 
 def main():
@@ -128,17 +149,23 @@ def main():
     vault = Path(args.path).expanduser()
 
     if args.apply:
+        if not args.src:
+            ap.error("--from <prior triage output> is required with --apply")
         verdicts = load_verdicts(args.src)
-        d, c = apply_verdicts(vault, verdicts, args.create_cap)
-        after = len(check_wanted_notes(load_vault(vault), vault))
+        d, c, s = apply_verdicts(vault, verdicts, args.create_cap)
+        after = len(check_wanted_notes(load_vault(vault, load_vault_config(vault)), vault,
+                                    load_vault_config(vault)))
         print(f"\nDeleted {d} junk links, created {c} stub notes.")
+        if s:
+            print(f"Skipped {s} (non-UTF-8 file or unsafe link path, left untouched).")
         print(f"Wanted notes now: {after}\n")
         return
 
     key = os.environ.get("ANTHROPIC_API_KEY")
     if not key:
         raise SystemExit("set ANTHROPIC_API_KEY")
-    broken = check_wanted_notes(load_vault(vault), vault)
+    broken = check_wanted_notes(load_vault(vault, load_vault_config(vault)), vault,
+                                    load_vault_config(vault))
 
     # One verdict per DISTINCT link text. apply_verdicts keys by link text and acts on
     # every occurrence, so triaging each unique dangling link once (instead of re-asking

@@ -2,6 +2,9 @@
 description: Load your identity, values, priorities, and current state in one shot - with progressive context levels to avoid burning tokens
 category: vault
 triggers_en: ["load context", "what is going on", "where am I", "load my world"]
+triggers_es: ["carga el contexto", "qué está pasando", "dónde estoy", "ponme al tanto de todo", "dame el resumen de mi vida"]
+triggers_pt: ["carregue contexto", "o que está acontecendo", "onde estou", "carregue meu mundo"]
+triggers_zh: ["加载我的完整背景", "告诉我现在的整体状况", "读取我的身份和当前重点", "先了解一下我的情况"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-world`:
@@ -55,6 +58,6 @@ If `index.md` doesn't exist, offer to run `/obsidian-init` to generate it.
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

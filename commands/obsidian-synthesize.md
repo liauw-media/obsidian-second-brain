@@ -2,6 +2,9 @@
 description: Automatic synthesis - scans the vault for unnamed patterns and writes synthesis pages without being asked
 category: thinking
 triggers_en: ["synthesize", "auto-synthesis", "make synthesis notes", "find unnamed patterns"]
+triggers_es: ["sintetiza", "síntesis automática", "crea notas de síntesis", "busca patrones nuevos", "saca conclusiones de mis notas"]
+triggers_pt: ["sintetize", "auto-síntese", "crie notas de síntese", "encontre padrões sem nome"]
+triggers_zh: ["自动综合我的知识库", "生成综合笔记", "把未命名的模式写成总结", "扫描知识库并形成综合结论"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-synthesize`:
@@ -16,14 +19,14 @@ This command can run manually or as a scheduled agent. It thinks for you.
 
    - **Cross-source agent**: read all sources ingested in the last 7 days (`raw/`). Find concepts that appear in 2+ unrelated sources. If the same idea shows up in a podcast transcript AND an article AND a daily note - that's a synthesis candidate.
    
-   - **Entity convergence agent**: scan `wiki/entities/` for people who appear together in multiple contexts but have no explicit connection page. If Person A and Person B keep showing up in the same projects/decisions - write a connection note.
+   - **Entity convergence agent**: scan the entities folder (resolved per `references/folder-map.md`) for people who appear together in multiple contexts but have no explicit connection page. If Person A and Person B keep showing up in the same projects/decisions - write a connection note.
    
-   - **Concept evolution agent**: scan `wiki/concepts/` for ideas that have been updated 3+ times. Track how the concept evolved - write a "Concept Evolution" section showing the timeline of how the user's thinking changed.
+   - **Concept evolution agent**: scan the concepts folder (resolved per `references/folder-map.md`) for ideas that have been updated 3+ times. Track how the concept evolved - write a "Concept Evolution" section showing the timeline of how the user's thinking changed.
    
-   - **Orphan rescue agent**: find notes in `wiki/` with no incoming links that contain claims or ideas that SHOULD be linked to existing pages. Create the missing links and explain why.
+   - **Orphan rescue agent**: find notes in any note folder (enumerate the folders present, per `references/folder-map.md`) with no incoming links that contain claims or ideas that SHOULD be linked to existing pages. Create the missing links and explain why.
 
 5. For each synthesis found:
-   - Create `wiki/concepts/Synthesis — Title.md` with:
+   - Create `Synthesis - Title.md` in the concepts folder (resolved per `references/folder-map.md`) with:
      ```yaml
      ---
      date: YYYY-MM-DD
@@ -44,6 +47,6 @@ The vault should generate its own insights. Not just when asked - on its own sch
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

@@ -7,7 +7,7 @@ Metadata + comments require YOUTUBE_API_KEY (free tier of YouTube Data API v3).
 import re
 from typing import Any
 
-from .config import YOUTUBE_API_KEY
+from .config import YOUTUBE_API_KEY, get_optional
 
 
 def parse_video_id(url_or_id: str) -> str:
@@ -24,19 +24,40 @@ def parse_video_id(url_or_id: str) -> str:
     raise ValueError(f"Could not extract YouTube video ID from: {url_or_id}")
 
 
+def _transcript_languages() -> list[str]:
+    """Preferred transcript languages, from TRANSCRIPT_LANGUAGES (comma-separated,
+    e.g. "ja,en"). Read per call, not at import, so long-lived callers and tests
+    can change it."""
+    raw = get_optional("TRANSCRIPT_LANGUAGES", "en")
+    return [lang.strip() for lang in raw.split(",") if lang.strip()]
+
+
 def get_transcript(video_id: str) -> str | None:
-    """Return concatenated transcript text, or None if unavailable."""
+    """Return concatenated transcript text, or None if unavailable.
+
+    Tries TRANSCRIPT_LANGUAGES in order, then falls back to whatever language
+    the video actually has. A preference miss is not "no captions" (issue
+    #210): the old call used youtube-transcript-api's ('en',) default, so every
+    non-English video looked caption-less even when its transcript was one
+    argument away."""
     try:
         from youtube_transcript_api import YouTubeTranscriptApi
     except ImportError:
         return None
+    api = YouTubeTranscriptApi()
     try:
-        api = YouTubeTranscriptApi()
-        fetched = api.fetch(video_id)
-        return " ".join(seg.text for seg in fetched.snippets if seg.text).strip()
-    except Exception as e:
-        print(f"[YouTube transcript unavailable: {type(e).__name__}: {e}]")
-        return None
+        fetched = api.fetch(video_id, languages=_transcript_languages())
+    except Exception as pref_err:
+        try:
+            first = next(iter(api.list(video_id)))
+            print(f"[YouTube transcript: none of the preferred languages "
+                  f"({','.join(_transcript_languages())}) available; using "
+                  f"'{getattr(first, 'language_code', '?')}']")
+            fetched = first.fetch()
+        except Exception:
+            print(f"[YouTube transcript unavailable: {type(pref_err).__name__}: {pref_err}]")
+            return None
+    return " ".join(seg.text for seg in fetched.snippets if seg.text).strip()
 
 
 def get_video_metadata(video_id: str) -> dict[str, Any] | None:
@@ -45,8 +66,14 @@ def get_video_metadata(video_id: str) -> dict[str, Any] | None:
     if not key:
         return None
     try:
+        # An explicit transport timeout. Without one googleapiclient falls back to
+        # httplib2's default of none, so a slow (not down) Data API blocks the whole
+        # /youtube command - including the plain non-visual path - with no bound and
+        # no way for the caller to recover. Matches lib/http.py's DEFAULT_TIMEOUT.
+        import httplib2
         from googleapiclient.discovery import build
-        yt = build("youtube", "v3", developerKey=key, cache_discovery=False)
+        yt = build("youtube", "v3", developerKey=key, cache_discovery=False,
+                   http=httplib2.Http(timeout=15))
         resp = yt.videos().list(part="snippet,statistics,contentDetails", id=video_id).execute()
         items = resp.get("items", [])
         if not items:
@@ -77,8 +104,14 @@ def get_top_comments(video_id: str, max_results: int = 20) -> list[dict[str, Any
     if not key:
         return []
     try:
+        # An explicit transport timeout. Without one googleapiclient falls back to
+        # httplib2's default of none, so a slow (not down) Data API blocks the whole
+        # /youtube command - including the plain non-visual path - with no bound and
+        # no way for the caller to recover. Matches lib/http.py's DEFAULT_TIMEOUT.
+        import httplib2
         from googleapiclient.discovery import build
-        yt = build("youtube", "v3", developerKey=key, cache_discovery=False)
+        yt = build("youtube", "v3", developerKey=key, cache_discovery=False,
+                   http=httplib2.Http(timeout=15))
         resp = yt.commentThreads().list(
             part="snippet",
             videoId=video_id,

@@ -2,6 +2,9 @@
 description: Promote an idea fragment into a full project spec with tasks, board entries, and structure
 category: thinking
 triggers_en: ["promote idea", "graduate this to project", "make a project from this", "elevate idea"]
+triggers_es: ["promociona esta idea", "convierte esto en proyecto", "haz un proyecto de esto", "eleva esta idea"]
+triggers_pt: ["promova esta ideia", "transforme isto em projeto", "crie um projeto a partir disto", "eleve esta ideia"]
+triggers_zh: ["把这个想法变成项目", "将这条灵感升级为项目", "为这个想法建立完整项目", "把它拆成项目和任务"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-graduate $ARGUMENTS`:
@@ -19,7 +22,7 @@ The optional argument is the idea title, tag, or keyword. If not provided, scan 
    - Past decisions that relate
    - Similar ideas that were previously explored (to avoid reinventing)
 5. Generate a full project spec:
-   - **Project note** in the projects folder (resolved above) with complete frontmatter (date, tags, status: planning, linked idea)
+   - **Project note** in the projects folder (resolved above) with the full `type: project` schema from `references/ai-first-rules.md` (`type: project`, `date`, `updated`, `status: planning`, `tags: [project]`, `related-people`, `related-projects`, `ai-first: true`) plus `graduated-from: "[[Idea Note]]"`
    - **Description**: what this project is and why it matters
    - **Goals**: 3-5 concrete outcomes
    - **Key tasks**: broken into phases with priorities
@@ -38,6 +41,6 @@ The idea doesn't die - it evolves. The original note stays as the origin story, 
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

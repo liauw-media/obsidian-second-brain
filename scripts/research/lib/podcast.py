@@ -2,6 +2,7 @@
 
 Inputs accepted:
   - Apple Podcasts URL (https://podcasts.apple.com/.../id<show>?i=<episode>)
+  - Spotify episode URL (bridged to the public RSS feed via oEmbed + Apple search)
   - RSS feed URL pointing at a single episode <item> (uses first episode)
   - Direct RSS URL + ?episode=<guid-or-title-fragment>
 
@@ -17,8 +18,9 @@ import os
 import re
 import sys
 import tempfile
+from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse, parse_qs
+from urllib.parse import parse_qs, urlparse
 
 import requests
 
@@ -87,6 +89,45 @@ def is_url(s: str) -> bool:
         return False
 
 
+def safe_fetch_url(url: str) -> str | None:
+    """Reject a feed-supplied URL that points anywhere but the public internet.
+
+    The transcript and audio URLs come verbatim out of a third-party feed, and
+    the Apple/Spotify lookups resolve to a feedUrl chosen by whoever published
+    the show - so a normal-looking podcasts.apple.com link is enough to reach
+    this code. Without a check, a feed can point at http://localhost:11434, a
+    dev server on 127.0.0.1, or a cloud metadata endpoint, and the response body
+    is then summarized by an LLM and written into the user's vault.
+
+    Returns the reason it was rejected, or None when the URL is safe to fetch.
+    """
+    import ipaddress
+    import socket
+
+    try:
+        u = urlparse(url)
+    except Exception:
+        return "unparseable URL"
+    if u.scheme not in ("http", "https"):
+        return f"scheme {u.scheme!r} is not http/https"
+    host = u.hostname
+    if not host:
+        return "no host"
+    try:
+        infos = socket.getaddrinfo(host, None)
+    except OSError as e:
+        return f"cannot resolve {host}: {e}"
+    for info in infos:
+        try:
+            ip = ipaddress.ip_address(info[4][0])
+        except ValueError:
+            continue
+        if (ip.is_private or ip.is_loopback or ip.is_link_local
+                or ip.is_reserved or ip.is_multicast or ip.is_unspecified):
+            return f"{host} resolves to a non-public address ({ip})"
+    return None
+
+
 def resolve_apple_to_rss(apple_url: str) -> tuple[str, str | None]:
     """Resolve Apple Podcasts URL to (feed_url, episode_id_str_or_None) via free iTunes Lookup API."""
     m = APPLE_RE.search(apple_url)
@@ -110,10 +151,10 @@ def parse_feed(
     """Parse an RSS feed and return episode metadata + audio URL + show-notes + transcript-tag-url."""
     try:
         import feedparser
-    except ImportError:
+    except ImportError as e:
         raise RuntimeError(
             "feedparser is required. Install with: uv sync (or pip install feedparser)"
-        )
+        ) from e
     parsed = feedparser.parse(feed_url)
     if parsed.bozo and not parsed.entries:
         raise ValueError(f"Could not parse feed at {feed_url}: {parsed.bozo_exception}")
@@ -224,8 +265,21 @@ def _strip_html(s: str) -> str:
 
 def fetch_transcript_tag(transcript_url: str) -> str | None:
     """Download a <podcast:transcript> resource. Supports text/plain, text/html, text/srt, text/vtt, JSON."""
+    bad = safe_fetch_url(transcript_url)
+    if bad:
+        print(f"[podcast transcript-tag refused: {bad}]", file=sys.stderr)
+        return None
     try:
-        r = requests.get(transcript_url, timeout=30)
+        # allow_redirects=False: an allowed host must not be able to bounce the
+        # request inward with a 302 after passing the check above.
+        r = requests.get(transcript_url, timeout=30, allow_redirects=False)
+        if r.is_redirect or r.is_permanent_redirect:
+            nxt = r.headers.get("Location", "")
+            bad = safe_fetch_url(nxt) if nxt else "empty redirect target"
+            if bad:
+                print(f"[podcast transcript-tag refused redirect: {bad}]", file=sys.stderr)
+                return None
+            r = requests.get(nxt, timeout=30, allow_redirects=False)
         r.raise_for_status()
     except Exception as e:
         print(f"[podcast transcript-tag fetch failed: {type(e).__name__}: {e}]", file=sys.stderr)
@@ -244,10 +298,11 @@ def fetch_transcript_tag(transcript_url: str) -> str | None:
 
 
 def _parse_json_transcript(body: str) -> str | None:
-    """Parse a JSON transcript body. Currently supports the Podcast Index
-    `{"segments": [{"body": "..."}]}` schema. Other schemas (Deepgram,
-    AssemblyAI, custom) are not supported and produce a stderr warning so
-    the caller knows a JSON transcript was found but unreadable.
+    """Parse a JSON transcript body. Supports the Podcast Index
+    `{"segments": [{"body": "..."}]}` schema and the Whisper-derived
+    `{"segments": [{"text": "..."}]}` schema that several hosts ship
+    (flightcast, Deepgram, AssemblyAI). Anything else produces a stderr
+    warning so the caller knows a JSON transcript was found but unreadable.
     """
     import json
     try:
@@ -257,23 +312,26 @@ def _parse_json_transcript(body: str) -> str | None:
         return None
     if isinstance(data, dict) and "segments" in data:
         segments = data["segments"]
-        joined = " ".join(s.get("body", "") for s in segments if s.get("body")).strip()
-        if joined:
-            return joined
+        # Podcast Index names the per-segment string `body`; Whisper-derived
+        # exports name it `text`. They are otherwise the same shape, so accept
+        # either rather than falling through to a show-notes-only summary.
+        for field in ("body", "text"):
+            joined = " ".join(s.get(field, "") for s in segments if s.get(field)).strip()
+            if joined:
+                return joined
         sample_keys: list[str] = []
         if isinstance(segments, list) and segments and isinstance(segments[0], dict):
             sample_keys = list(segments[0].keys())[:6]
         print(
-            f"[podcast transcript-tag JSON: `segments` present but no `body` field "
-            f"(segment keys: {sample_keys}). Likely Deepgram/AssemblyAI/custom schema. "
-            f"Only Podcast Index `segments[].body` is supported in v1.]",
+            f"[podcast transcript-tag JSON: `segments` present but no `body` or `text` field "
+            f"(segment keys: {sample_keys}). Unrecognised schema.]",
             file=sys.stderr,
         )
         return None
     keys = list(data.keys())[:5] if isinstance(data, dict) else type(data).__name__
     print(
         f"[podcast transcript-tag JSON: unsupported schema (top-level keys/type: {keys}). "
-        f"Only Podcast Index `segments[].body` is supported in v1.]",
+        f"Only `segments[].body` and `segments[].text` are supported.]",
         file=sys.stderr,
     )
     return None
@@ -305,6 +363,10 @@ def transcribe_via_whisper(audio_url: str, max_bytes: int = 25 * 1024 * 1024) ->
         print("[podcast whisper: openai package not installed]", file=sys.stderr)
         return None
 
+    bad = safe_fetch_url(audio_url)
+    if bad:
+        print(f"[podcast whisper refused: {bad}]", file=sys.stderr)
+        return None
     try:
         with requests.get(audio_url, stream=True, timeout=60) as resp:
             resp.raise_for_status()
@@ -323,7 +385,7 @@ def transcribe_via_whisper(audio_url: str, max_bytes: int = 25 * 1024 * 1024) ->
                     bytes_written += len(chunk)
                     if bytes_written > max_bytes:
                         tmp.close()
-                        os.unlink(tmp.name)
+                        Path(tmp.name).unlink()
                         print(
                             f"[podcast whisper: audio exceeds {max_bytes // (1024*1024)} MB while streaming]",
                             file=sys.stderr,
@@ -337,7 +399,7 @@ def transcribe_via_whisper(audio_url: str, max_bytes: int = 25 * 1024 * 1024) ->
 
     try:
         client = OpenAI(api_key=key)
-        with open(tmp_path, "rb") as f:
+        with Path(tmp_path).open("rb") as f:
             result = client.audio.transcriptions.create(
                 model="whisper-1",
                 file=f,
@@ -356,7 +418,7 @@ def transcribe_via_whisper(audio_url: str, max_bytes: int = 25 * 1024 * 1024) ->
         return None
     finally:
         try:
-            os.unlink(tmp_path)
+            Path(tmp_path).unlink()
         except OSError:
             pass
 

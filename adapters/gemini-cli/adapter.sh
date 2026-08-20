@@ -40,11 +40,11 @@ agent) should follow when the user's request matches its trigger phrase.
 2. When the user's request matches a trigger in the tables below, read the
    matching file under `.gemini/commands/<name>.md` and follow its
    instructions step by step.
-3. Treat the AI-first vault rule (`references/ai-first-rules.md`) as
-   non-negotiable for every note you write: `## For future Claude` preamble,
-   rich frontmatter (`type`, `date`, `tags`, `ai-first: true`), `[[wikilinks]]`
-   for every person/project/concept, recency markers per external claim,
-   sources verbatim, confidence levels where applicable.
+EOF
+
+    emit_ai_first_rule ".gemini/references/ai-first-rules.md"
+
+    cat <<'EOF'
 
 ## Command routing tables (grouped by category)
 EOF
@@ -72,26 +72,14 @@ _gemini_translate_commands() {
     out="$dst/$(basename "$f")"
     cp "$f" "$out"
     rewrite_tool_neutral "$out"
+    rewrite_skill_root "$out" ".${GEMINI_DIR}"
     rewrite_platform_paths "$out" "$GEMINI_DIR"
   done
 }
 
-_gemini_copy_references() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-  find "$dst" -type f -name '*.md' -print0 | while IFS= read -r -d '' f; do
-    rewrite_platform_paths "$f" "$GEMINI_DIR"
-  done
-}
+_gemini_copy_references() { copy_references_rewritten "$1" "$2" "$GEMINI_DIR"; }  # see adapters/lib.sh
 
-_gemini_copy_scripts() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-}
+_gemini_copy_scripts() { copy_scripts_with_project "$1" "$2"; }  # see adapters/lib.sh
 
 _gemini_emit_install_hint() {
   local dst="$1"
@@ -107,6 +95,6 @@ Then in your vault:
 
 - `GEMINI.md` is the operating manual Gemini reads at session start.
 - `.gemini/commands/*.md` are the command bodies the AI follows.
-- `.gemini/scripts/` holds the Python helpers (`uv run -m scripts.research.<name>`).
+- `.gemini/scripts/` holds the Python helpers; `.gemini/` ships a `pyproject.toml`, so run them via `(cd .gemini && uv run -m scripts.research.<name> ...)`.
 EOF
 }

@@ -62,7 +62,15 @@ def download_video(url: str, out_dir: Path) -> dict:
         "-o", output_template,
         "--", url,
     ]
-    subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+    # A bound on the one call in this pipeline that talks to an arbitrary remote
+    # host. Without it a stalled CDN hangs forever with no exception to catch, so
+    # the caller cannot fall back - it just never returns. FrameError is already
+    # handled by _extract_visual, which skips the visual layer cleanly.
+    try:
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       check=False, timeout=600)
+    except subprocess.TimeoutExpired as e:
+        raise FrameError(f"yt-dlp timed out after 600s downloading {url}") from e
 
     video = _pick_video(out_dir)
     if video is None:
@@ -101,11 +109,13 @@ def is_url(source: str) -> bool:
 
 def get_metadata(video_path: str) -> dict:
     _require("ffprobe")
+    # Bounded like the download above. ffprobe/ffmpeg operate on a local file so
+    # a hang is unlikely, but a malformed or truncated download can stall them and
+    # both already raise FrameError, which callers handle.
     result = subprocess.run(
         ["ffprobe", "-v", "quiet", "-print_format", "json",
          "-show_format", "-show_streams", str(Path(video_path).resolve())],
-        capture_output=True, text=True,
-    )
+        capture_output=True, text=True, timeout=120)
     if result.returncode != 0:
         raise FrameError(f"ffprobe failed: {result.stderr.strip()}")
     data = json.loads(result.stdout or "{}")
@@ -169,7 +179,7 @@ def extract_uniform(
         "-q:v", "4",
         str(out_dir / "frame_%04d.jpg"),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         raise FrameError(f"ffmpeg frame extraction failed: {result.stderr.strip()}")
     frames = sorted(out_dir.glob("frame_*.jpg"))
@@ -211,7 +221,7 @@ def extract_scene_change(
         "-q:v", "4",
         str(out_dir / "frame_%04d.jpg"),
     ]
-    result = subprocess.run(cmd, capture_output=True, text=True)
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
     if result.returncode != 0:
         raise FrameError(f"ffmpeg scene-change extraction failed: {result.stderr.strip()}")
 

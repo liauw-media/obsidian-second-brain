@@ -5,8 +5,8 @@ Agent / Claude Desktop / Cursor use - and exercises every tool. Proves the
 connector works end-to-end without needing Hermes itself installed.
 
 Usage:
-    OBSIDIAN_VAULT_PATH=/path/to/vault uv run --with mcp python live_test.py
-    OBSIDIAN_VAULT_PATH=/path/to/vault uv run --with mcp python live_test.py --save "query"
+    OBSIDIAN_VAULT_PATH=/path/to/vault uv run --with 'mcp<2' python live_test.py
+    OBSIDIAN_VAULT_PATH=/path/to/vault uv run --with 'mcp<2' python live_test.py --save "query"
 
 Without --save the run is read-only (safe against a real vault). With --save it
 also writes one test note to the vault's Inbox/.
@@ -16,12 +16,12 @@ import asyncio
 import json
 import os
 import sys
+from pathlib import Path
 
 from mcp import ClientSession, StdioServerParameters
 from mcp.client.stdio import stdio_client
 
-SERVER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "server.py")
-
+SERVER = (Path(__file__).parent / "server.py").as_posix()
 
 async def main(query: str, do_save: bool) -> None:
     vault = os.environ.get("OBSIDIAN_VAULT_PATH", "").strip()

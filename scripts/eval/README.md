@@ -6,6 +6,8 @@ bigger model. It reuses the real `search()` from the MCP connector
 (`integrations/obsidian-mcp-server/vault_ops.py`), so it scores the exact
 term-frequency, title-weighted ranking the skill ships with today.
 
+**Want reproducible numbers rather than numbers about one private vault?** See [BENCHMARK.md](BENCHMARK.md). `corpus.py` generates a deterministic 300-note synthetic vault plus three gold query sets, so anyone can run the same measurement and compare. The case files below are gitignored because they contain real notes; the benchmark corpus contains none.
+
 ## Why
 
 "Retrieval quality" was the top research theme from the skill audit: `/find` and

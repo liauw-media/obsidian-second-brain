@@ -4,7 +4,8 @@
 from __future__ import annotations
 
 import sys
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout, as_completed
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import TimeoutError as FuturesTimeout
 from dataclasses import asdict
 from typing import Any, Protocol
 
@@ -31,7 +32,14 @@ def aggregate(
     warnings: list[str] = []
     succeeded: set[str] = set()
 
-    with ThreadPoolExecutor(max_workers=len(sources)) as ex:
+    # Deliberately NOT a `with` block. Exiting the context manager calls
+    # shutdown(wait=True), which blocks until every submitted future finishes -
+    # so after the declared timeout elapsed and the warning was logged, the call
+    # still sat waiting for the slow source. Each source retries up to 3 times at
+    # 15s, so a slow-but-responding source could hold the caller for another
+    # 60-70s past a bound advertised as OVERALL_TIMEOUT_SECONDS.
+    ex = ThreadPoolExecutor(max_workers=len(sources))
+    try:
         future_to_source = {
             ex.submit(_safe_search, s, query, n_per_source): s for s in sources
         }
@@ -48,6 +56,9 @@ def aggregate(
             for f, s in future_to_source.items():
                 if not f.done():
                     warnings.append(f"{s.name}: timeout")
+    finally:
+        # Return as soon as the bound elapses; abandon anything still running.
+        ex.shutdown(wait=False, cancel_futures=True)
 
     return {
         "topic": query,

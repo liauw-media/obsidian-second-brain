@@ -7,7 +7,7 @@ and add notes to an Obsidian vault. This is the "second brain as a tool" connect
 doorway into the knowledge vault.
 
 Run:
-    OBSIDIAN_VAULT_PATH=/path/to/vault uv run --with mcp python server.py
+    OBSIDIAN_VAULT_PATH=/path/to/vault uv run --with 'mcp<2' python server.py
 
 or wire it into a client's MCP config (see README.md).
 """
@@ -15,16 +15,15 @@ or wire it into a client's MCP config (see README.md).
 from __future__ import annotations
 
 import json
-import os
 import sys
+from pathlib import Path
 
 # Make `vault_ops` importable regardless of the working directory the client
 # launches us from.
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+sys.path.insert(0, Path(__file__).parent.as_posix())
 
 import vault_ops  # noqa: E402
+from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 mcp = FastMCP("obsidian-second-brain")
 
@@ -40,9 +39,13 @@ def obsidian_search(query: str, limit: int = 6) -> str:
 
 
 @mcp.tool()
-def obsidian_read_note(path: str) -> str:
-    """Read the full content of a vault note by its vault-relative path."""
-    return json.dumps(vault_ops.read_note(path))
+def obsidian_read_note(path: str, offset: int = 0, limit: int = 20_000) -> str:
+    """Read a vault note by path with explicit pagination.
+
+    If `truncated` is true, call again with the returned `next_offset` until it
+    is null. This avoids silently losing the newest part of large dossiers.
+    """
+    return json.dumps(vault_ops.read_note(path, offset=offset, limit=limit))
 
 
 @mcp.tool()
@@ -51,12 +54,22 @@ def obsidian_save_note(
     content: str,
     type: str = "note",
     tags: list[str] | None = None,
+    path: str | None = None,
+    summary: str | None = None,
 ) -> str:
-    """Save a new note to the vault Inbox (AI-first format).
+    """Save a new AI-first note.
 
-    Use for facts, ideas, or anything worth keeping in the knowledge vault.
+    `path` is an optional vault-relative markdown path such as
+    `wiki/entities/Ada Lovelace.md`. Omit it for a dated Inbox capture.
+    `summary` becomes the platform-neutral `## For future agent` preamble. If
+    content already begins with a legacy or generic future-agent heading, the
+    server normalizes it and never duplicates it.
     """
-    return json.dumps(vault_ops.save_note(title, content, note_type=type, tags=tags))
+    return json.dumps(
+        vault_ops.save_note(
+            title, content, note_type=type, tags=tags, path=path, summary=summary
+        )
+    )
 
 
 @mcp.tool()
@@ -75,10 +88,16 @@ def obsidian_update_note(
     """Guarded edit of an EXISTING vault note (curator mode).
 
     Appends a section (`append`, optionally under a `## heading`) and/or merges
-    scalar frontmatter fields (`set_fields`, e.g. {"status": "done"}). Preserves
+    scalar frontmatter fields (`set_fields`, e.g. {"owner": "alex"}). Preserves
     the rest of the note verbatim, never creates a note, never touches list
     frontmatter like `tags:`, and refuses paths outside the vault. Stamps
     `updated` with today's date. To create a new note, use obsidian_save_note.
+
+    `status` is not a free-form label: the values superseded, declined,
+    rejected, archived, obsolete, cancelled, closed, parked, inactive and done
+    fade the note in every future vault search. Setting one is closer to
+    archiving than to labelling, so only set it when the note genuinely no
+    longer holds. The response echoes a `faded` field when it happens.
     """
     return json.dumps(
         vault_ops.update_note(path, append=append, heading=heading, set_fields=set_fields)
@@ -86,11 +105,31 @@ def obsidian_update_note(
 
 
 @mcp.tool()
+def obsidian_replace_text(path: str, old_text: str, new_text: str) -> str:
+    """Guarded exact patch of an existing note.
+
+    The old block must occur exactly once. The operation is atomic and refuses
+    protected directories, path escapes, missing anchors, and ambiguous matches.
+    """
+    return json.dumps(vault_ops.replace_text(path, old_text, new_text))
+
+
+@mcp.tool()
+def obsidian_move_note(source: str, destination: str) -> str:
+    """Move a markdown note inside the vault without overwriting a destination.
+
+    Use to graduate Inbox captures into canonical entity/project folders. The
+    result reminds callers to repair any path-qualified links to the old path.
+    """
+    return json.dumps(vault_ops.move_note(source, destination))
+
+
+@mcp.tool()
 def obsidian_validate_note(path: str) -> str:
     """Check a note for AI-first compliance and unresolved wikilinks.
 
     Returns {path, ok, issues}: missing frontmatter or required keys
-    (type/date/tags/ai-first), a missing `## For future Claude` preamble, and
+    (type/date/tags/ai-first), a missing/empty future-agent preamble, and
     any `[[wikilink]]` whose target note does not exist. Use before/after a
     write to keep the vault self-consistent.
     """

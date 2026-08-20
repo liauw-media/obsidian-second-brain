@@ -142,3 +142,67 @@ These land most of the real value with no design debate:
 7. Document the `claude -p` slash-command-expansion workaround (#34).
 
 Scrub list before merging anything from `the research-toolkit fork`: hardcoded `/Users/leric/...` and `~/Documents/SecondBrain` paths, `langlive-line-oa` defaults, Discord `#langlive-line-oa`, zh-TW header defaults. From `the pillar-vault fork`: `/Users/cpreston/...` paths, the eight-pillar layout, the `the pillar-vault fork` skill rename. From `the calendar/workflow fork`: Spanish section headers, "Interface School", the faith-oriented `area` taxonomy.
+
+---
+
+# Round 2 - what 408 forks built (2026-07-18)
+
+Analysis date: 2026-07-18. Repo at analysis time: 3,361 stars, 408 forks, v0.13.0 just released. Same method as round 1: every fork's default branch compared via the GitHub compare API, diverging forks deep-read. Neutral descriptors as in round 1.
+
+## The landscape
+
+- 379 forks are untouched mirrors (0 ahead). No signal.
+- 26 forks diverge; ~10 are round-1 forks unchanged since. 16 carry post-round-1 work.
+- 3 compare errors (deleted accounts / renamed branches).
+
+| Fork | Ahead | What they built |
+|---|---|---|
+| the local-first memory fork | +3 (169 files) | SQLite FTS5 index + optional FastEmbed + RRF fusion; bounded recall brief (3-5 notes, ~1k tokens, abstains below threshold); per-prompt UserPromptSubmit hook, fail-closed; capture staging with sensitive-term gate; SHA-256 provenance manifest; hard-case eval fixtures. Exemplary attribution doc crediting upstream. |
+| the api-ledger fork | +6 | JSONL ledger of every paid API call (provider, query, tier, est cost), fail-soft; /youtube summarization via Gemini with Grok fallback; max_tokens cost cap; /finance pre-trade brief (niche) |
+| the brave-source fork | +2 | Brave Search source (idiomatic match to the source protocol, free tier); a second independent Tavily source |
+| the web-reader fork | +4 | Tavily Extract full-page reader wired into /research-deep synthesis (reads pages, not just snippets); a third independent Tavily source; link-scan exclude globs |
+| the updater fork | +3 | Guarded update script: remote-verify, merge-abort-on-conflict, smoke-test gate, timestamped backup + rollback trap |
+| the brainstorm fork (round-1 research-toolkit fork, 1 day of new work) | +264 | /obsidian-brainstorm v2: stateful multi-turn Socratic engine, one question per turn from 6 template categories, convergence checklist gate, dual output (repo-side engineering spec + AI-first vault note) |
+| the structured-rag eval fork | +1 | Clean optional benchmark harness: vault lexical baseline vs TypeAgent structured RAG via env-configured adapter; degrades to skip |
+| the OKF-first fork | +8 | Design docs flipping OKF from export to canonical on-disk format; command classification matrix; pt-BR triggers |
+| the distill-variant fork | +3 | Independent /obsidian-distill (predates upstream's by 6 days) with a classification taxonomy + auditable source-transcript archival; Oh My Pi adapter; FORK_MAINTENANCE.md pattern |
+| the Lark fork | +4 | Lark Suite sync commands (domain fork per ECOSYSTEM.md); PowerShell ports of every adapter |
+| the Codex-App fork | +4 | Text-only AGENTS.md adapter for shell-less Codex App; code-intelligence-ingest command |
+| the model-neutral fork | +1 | Root SKILL.md description shortened - datapoint that some Codex loaders choke on long folded YAML descriptions (upstream dist descriptions verified <= 486 chars, spec cap 1024) |
+
+Three independent forks built a Tavily source before upstream shipped one (v0.13.0) - the clearest demand signal in the batch.
+
+## Already covered upstream (verified, not assumed)
+
+- Tavily source (shipped v0.13.0), em/en-dash normalization no-op (#63), inline/scalar alias parsing, .claude-dir excludes, per-vault exclude config (v0.13.0 .vault-config.json), Agent Skills tree incl. early .agents/skills experiments (v0.13.0), Pi adapter (v0.11.1).
+
+## Round-2 gold, ranked
+
+**P0 (small, high-value, no design debate):**
+1. Brave Search source - mirrors the just-shipped Tavily pattern, free tier.
+2. API-cost ledger - fail-soft JSONL of paid calls; makes CLI spend auditable.
+3. /youtube summarization via Gemini with Grok fallback - free-tier summaries.
+4. Link-scan exclude mechanism for the health check (port the glob mechanism; the insight: activity logs and prior health reports echo every audited link).
+
+**P1 (strong, needs a design pass):**
+5. Tavily Extract web-reader in /research-deep - synthesis reads full pages; paid, cap-guarded.
+6. Bounded-recall pattern - abstention threshold + token budget + fail-closed hook + recall logging; a safer shape for context injection than unconditional loading.
+7. Supersession + temporal reranking driven by frontmatter lifecycle - complements the freshness policy.
+8. Capture staging - sensitive-term gate + explicit-only auto-promote for unattended writes (bg-agent hardening).
+9. /obsidian-brainstorm - the only stateful multi-turn thinking tool in the ecosystem; needs de-coupling from its fork's framework + translation.
+10. Guarded updater script - port the pattern (verify remotes, abort on conflict, smoke-gate, backup+rollback), not the file.
+11. Structured-RAG eval harness - clean, optional, self-skipping.
+
+**P2 (note, do not build now):**
+- SQLite FTS5-default index with optional in-process embeddings (revisit if bge-m3 dependency friction shows up in issues).
+- Provenance manifest (SHA-256 raw + citation lint) - overlaps raw/ conventions; revisit with OKM.
+- pt-BR triggers - invite the fork author to PR their translations.
+- PowerShell adapter ports - Windows build story; high maintenance, wait for demand.
+
+**Won't do:** /finance (personal trading workflow), Lark sync (domain fork), Codex App text-only adapter (niche), OKF-first inversion (contradicts wikilink-first philosophy; kept as a reference read), Oh My Pi adapter (fork maintains it per ECOSYSTEM.md).
+
+## What NOT to copy (round 2)
+
+- The local-first memory fork's research-toolkit deletion - it guts the hosted research commands upstream actively ships. Port modules, never merge wholesale.
+- Per-prompt index refresh (O(vault) rglob on every prompt) - the latency cost is real; upstream injection stays event-driven.
+- User-specific defaults spotted: a Portuguese health-report glob, a personal Desktop backup path, zh-TW template prose, hardcoded fork-owner remotes in the updater.

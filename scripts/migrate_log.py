@@ -9,6 +9,11 @@ ships the entry template.
 
 Idempotent: skips dates whose target file already exists. Prints a summary.
 
+Safety: log.md is only replaced with the pointer when EVERY dated section was
+carried over. If any date was skipped because its target already existed, that
+section still lives only in log.md, so overwriting it would destroy the sole
+copy. In that case the original is left untouched and the run exits non-zero.
+
 Usage:
     python scripts/migrate_log.py --vault /path/to/vault [--dry-run]
 """
@@ -17,7 +22,11 @@ from __future__ import annotations
 import argparse
 import re
 import sys
+from datetime import date as _date
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from note_io import write_exact  # noqa: E402
 
 DATE_HEADER = re.compile(r"^##\s+\[?(\d{4}-\d{2}-\d{2})\]?[^\n]*", re.MULTILINE)
 TEMPLATE_HEADER = re.compile(r"^##\s+Template\s*$", re.MULTILINE)
@@ -30,7 +39,7 @@ ai-first: true
 
 # Vault Operations - {date}
 
-> For future Claude: timestamped audit log of vault writes on this day. Append-only.
+> For future agent: timestamped audit log of vault writes on this day. Append-only.
 
 """
 
@@ -42,7 +51,7 @@ ai-first: true
 
 # Vault Operation Log
 
-> For future Claude: vault operation history is split per-day under `Logs/YYYY-MM-DD.md`.
+> For future agent: vault operation history is split per-day under `Logs/YYYY-MM-DD.md`.
 > Append today's entries to `Logs/{today}.md` (create the file if missing using the template below).
 > Do not write entries into this file.
 
@@ -65,7 +74,7 @@ ai-first: true
 
 # Vault Operations - YYYY-MM-DD
 
-> For future Claude: timestamped audit log of vault writes on this day. Append-only.
+> For future agent: timestamped audit log of vault writes on this day. Append-only.
 
 **HH:MM** - [Operation type]
 - [What changed]
@@ -114,7 +123,10 @@ def split_log(text: str) -> dict[str, str]:
 
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument("--vault", required=True, type=Path, help="Path to vault root")
+    # --path is the convention across every other script; accept both so a
+    # wrapper passing --path does not break silently on this one.
+    ap.add_argument("--vault", "--path", dest="vault", required=True, type=Path,
+                    help="Path to vault root")
     ap.add_argument("--dry-run", action="store_true", help="Print actions without writing")
     args = ap.parse_args()
 
@@ -126,15 +138,19 @@ def main() -> int:
         print(f"error: {log_path} not found", file=sys.stderr)
         return 1
 
-    text = log_path.read_text(encoding="utf-8")
+    text = log_path.read_text(encoding="utf-8-sig")
     sections = split_log(text)
 
     if not sections:
         print("error: no `## [YYYY-MM-DD]` sections found in log.md - nothing to migrate", file=sys.stderr)
         return 1
 
-    today = max(sections.keys())  # most recent date in the log
-    print(f"Found {len(sections)} dated section(s): {min(sections)} ... {today}")
+    newest = max(sections.keys())
+    # The pointer tells future agent where TODAY's entries go, so it must carry
+    # the current date, not the last date found in the legacy log. Using `newest`
+    # here silently directed every future write into a stale day's file.
+    today = _date.today().isoformat()
+    print(f"Found {len(sections)} dated section(s): {min(sections)} ... {newest}")
 
     if not args.dry_run:
         logs_dir.mkdir(exist_ok=True)
@@ -150,15 +166,27 @@ def main() -> int:
         if args.dry_run:
             print(f"  would write Logs/{date}.md ({len(body)} chars)")
         else:
-            target.write_text(content, encoding="utf-8")
+            write_exact(target, content)
             print(f"  wrote  Logs/{date}.md")
         written += 1
+
+    # A skipped date was never carried over anywhere, so log.md still holds the
+    # only copy of that section. Replacing it with the pointer would delete it.
+    if skipped:
+        print(
+            f"\n{skipped} date(s) already existed under Logs/ and were NOT migrated.\n"
+            "log.md is unchanged - it still holds the only copy of those sections.\n"
+            "Resolve the collisions (merge or rename the existing files), then re-run.",
+            file=sys.stderr,
+        )
+        print(f"Done. {written} file(s) written, {skipped} skipped. log.md left intact.")
+        return 1
 
     pointer = ROOT_POINTER.format(today=today)
     if args.dry_run:
         print(f"  would replace log.md with pointer ({len(pointer)} chars)")
     else:
-        log_path.write_text(pointer, encoding="utf-8")
+        write_exact(log_path, pointer)
         print("  wrote  log.md (pointer)")
 
     print(f"\nDone. {written} file(s) written, {skipped} skipped.")

@@ -1,7 +1,11 @@
 ---
 description: Save everything worth keeping from this conversation to the vault
 category: vault
+trigger-mode: proactive
 triggers_en: ["save this", "save the conversation", "save to vault", "obsidian save"]
+triggers_es: ["guarda esto", "guarda la conversación", "guarda al vault", "guarda todo esto"]
+triggers_pt: ["salve isto", "salve a conversa", "salve no vault", "obsidian save"]
+triggers_zh: ["保存这段对话", "把值得保留的内容存进知识库", "把刚才聊的整理进笔记", "保存到我的知识库"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-save`:
@@ -19,7 +23,7 @@ Use the obsidian-second-brain skill. Execute `/obsidian-save`:
      - **Hooks, angles, contrarian takes** → append to `social-media/ideas.md` (dated bullet)
      - **Specific numbers, stats, reusable data points** → append to `social-media/data-points.md` (with source)
      - **External posts that hit + why** → append to `social-media/swipe-file.md` (link + reason)
-     - **Research findings, frameworks, methodologies** → create `social-media/research/YYYY-MM-DD — topic.md`
+     - **Research findings, frameworks, methodologies** → create `social-media/research/YYYY-MM-DD - topic.md`
 5. After all agents complete: update today's daily note with links to everything saved
 6. Report back: a clean list of what was saved and where
 
@@ -29,6 +33,6 @@ The content agent only runs if `social-media/` exists in the vault. If it doesn'
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

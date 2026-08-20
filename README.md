@@ -1,6 +1,6 @@
 <p align="center">
   <a href="https://github.com/eugeniughelbur/obsidian-second-brain">
-    <img src="media/banner.png" alt="obsidian-second-brain: one brain, six platforms, 44 commands. A cross-platform skill for Obsidian that runs on Claude Code, Codex, Gemini, OpenCode, Hermes, and Pi." width="100%" />
+    <img src="media/banner.png" alt="obsidian-second-brain: one brain, seven platforms, 46 commands. A cross-platform skill for Obsidian that runs on Claude Code, Codex, Gemini, OpenCode, Antigravity, Hermes, and Pi." width="100%" />
   </a>
 </p>
 
@@ -12,7 +12,9 @@
 </p>
 
 <p align="center">
-  <strong>One codebase. Six CLIs. Same brain.</strong>
+  <strong>One codebase. Seven CLIs. Same brain.</strong>
+  <br />
+  <em>Your vault outlives whichever CLI you switch to.</em>
 </p>
 
 <p align="center">
@@ -23,39 +25,154 @@
   <a href="https://github.com/sponsors/eugeniughelbur"><img src="https://img.shields.io/badge/Sponsor-EA4AAA?style=for-the-badge&logo=github-sponsors&logoColor=white" alt="Sponsor" /></a>
 </p>
 
-<h1 align="center">obsidian-second-brain</h1>
+<h1 align="center">obsidian-second-brain: an AI second brain for Obsidian that Claude can actually search</h1>
 
 <p align="center">
   <strong>An evolution of <a href="https://gist.github.com/karpathy/442a6bf555914893e9891c11519de94f">Karpathy's LLM Wiki pattern</a>: a vault that rewrites itself.</strong>
   <br /><br />
   <em>Every source updates existing pages instead of just appending new ones. Contradictions reconcile automatically. Your vault compounds while you sleep.</em>
   <br /><br />
-  <em>44 commands &middot; auto-synthesis &middot; thinking tools that argue with you</em>
+  <strong>Powered by <a href="references/freshness-policy.md">OKM - Open Knowledge Metabolism</a>:</strong> <em>every stored fact is timeless, dated, or a pointer - so your knowledge base never fills with facts that used to be true.</em>
+  <br /><br />
+  <strong>Built for</strong> <em>developers &middot; founders and operators &middot; writers &middot; researchers - <a href="#choose-your-preset">pick a preset at setup</a></em>
+  <br /><br />
+  <strong>Start with three:</strong> <em><code>/obsidian-init</code> to set up, <code>/obsidian-save</code> to capture, <code>/obsidian-find</code> to recall. The other 42 are there when you need them.</em>
+  <br /><br />
+  <em>auto-synthesis &middot; thinking tools that argue with you</em>
   <br /><br />
   <em>live research from X, the web, and YouTube &middot; 4 scheduled agents &middot; 4 role presets</em>
   <br /><br />
   <em>write-time AI-first validator &middot; <code>/create-command</code> interview flow &middot; multilingual trigger schema</em>
   <br /><br />
+  <a href="#install"><strong>Install &rarr;</strong></a> &middot;
+  <a href="DEMOS.md">Demos</a> &middot;
   <a href="#what-happens-when-you-install-this">See it in action</a> &middot;
-  <a href="#43-commands">All commands</a> &middot;
-  <a href="#install">Install</a> &middot;
+  <a href="#45-commands">All commands</a> &middot;
   <a href="#choose-your-preset">Presets</a> &middot;
+  <a href="#the-vault-is-alive">OKM</a> &middot;
   <a href="https://github.com/eugeniughelbur/obsidian-second-brain/discussions">Discussions</a>
 </p>
 
 <p align="center">
-  <strong>v0.10 - The Architect (May 2026):</strong> new <code>/obsidian-architect</code> scans a codebase and writes maintained architecture notes into your vault - refreshable, never clobbering your edits.<br/>
-  <em>Plus free key-less research, Google Calendar commands, anti-hallucination guards, and tests + CI.</em><br/>
+  <a href="DEMOS.md">
+    <img src="media/obsidian-save.gif" alt="One /obsidian-save command turns a conversation into five cross-linked AI-first notes: a person, a project with the decision, a task, a board card, and the daily note." width="100%" />
+  </a>
+  <br />
+  <em>One <code>/obsidian-save</code> - five cross-linked notes. Real footage, synthetic vault. <a href="DEMOS.md">More demos &rarr;</a></em>
+  <br /><br />
+  <em>If this looks useful, <a href="https://github.com/eugeniughelbur/obsidian-second-brain">star the repo</a>. It is how other people find it.</em>
+</p>
+
+<p align="center">
+  <strong>v0.14 - The Harvest (July 2026):</strong> we scanned all 408 forks of this repo and shipped the best ideas back upstream, crediting every author.<br/>
+  <em>Multi-turn /obsidian-brainstorm, bounded vault recall, full-page source reading, Brave + Tavily sources, a guarded updater, supersession-aware search, secret detection, pt-BR triggers - and one Agent Skills build serving Codex, OpenCode, Antigravity, and Copilot CLI (v0.13). 198-test CI wall.</em>
   <a href="CHANGELOG.md">See the changelog &rarr;</a>
 </p>
+
+---
+
+## The Problem
+
+You use Claude every day. Every session starts from scratch. You re-explain everything. The conversation ends. Everything disappears. Claude Code has no persistent memory across sessions, and neither does Codex, Gemini, or any of the others.
+
+You take notes in Obsidian. Hundreds of files. They just sit there. You make the same decision twice because you forgot you made it six months ago. Ideas rot in daily notes. Nobody connects the dots.
+
+**Two powerful tools. Completely disconnected.** You already have the long-term memory. The thing doing the thinking cannot reach it.
+
+---
+
+## How this extends Karpathy's LLM Wiki
+
+Karpathy's pattern is brilliant. Drop sources, LLM creates wiki pages, ask questions. This skill takes it further:
+
+| | Karpathy's LLM Wiki | obsidian-second-brain |
+|---|---|---|
+| **New sources** | Append new pages, cross-reference | **Rewrite existing pages.** People get updated, claims revised, stale facts replaced. |
+| **Contradictions** | Flagged, you resolve manually | `/obsidian-reconcile` resolves them automatically |
+| **Patterns** | Surface when you ask | `/obsidian-synthesize` finds unnamed patterns and writes synthesis pages on its own |
+| **When it runs** | On demand, when you prompt | 4 scheduled agents: morning brief, nightly consolidation, weekly review, vault-health check |
+| **Note format** | Human-readable wiki pages | AI-first: `## For future agent` preamble + frontmatter for LLM retrieval, not human review |
+
+If Karpathy's wiki is a knowledge base you maintain with an LLM, this is a knowledge base that maintains itself.
+
+---
+
+## What Happens When You Install This
+
+**After a meeting:** `/obsidian-save`
+Claude pulls out every decision, person, task, and idea and saves each one to the right note. You do nothing.
+
+**You recorded a voice memo:** `/obsidian-ingest meeting.m4a`
+Claude transcribes it with a local Whisper install, attributes speakers where the transcript makes them identifiable, extracts every promise and action item, and distributes across entity pages, task boards, and the daily note.
+
+**You screenshot a whiteboard:** `/obsidian-ingest photo.png`
+Claude reads the image, extracts text and structure, creates concept notes, links to related projects. A photo becomes knowledge.
+
+**You find a great video:** `/obsidian-ingest https://youtube.com/...`
+Claude doesn't summarize into one note. It REWRITES your existing pages. People get updated. Contradictions get resolved. Patterns trigger new synthesis pages. One URL in. The vault is smarter.
+
+**Before a big decision:** `/obsidian-challenge`
+Claude searches your vault for past failures and reversed decisions on the same topic. Pushes back with your own words. Your vault holds you accountable.
+
+**You want to see the big picture:** `/obsidian-visualize`
+Claude generates a visual canvas of your entire vault. Hub nodes centered, color-coded by type, orphans highlighted. Open it in Obsidian and see the shape of your knowledge.
+
+**You go to sleep:** The nightly agent runs 5 phases: closes the day, reconciles contradictions, synthesizes cross-source patterns, heals orphan notes, and rebuilds the index. You wake up to a smarter vault.
+
+**You start a new day:** `/obsidian-daily`
+Claude pulls your calendar events, overdue tasks, and overnight changes into today's note. Your morning starts informed.
+
+**Someone shares an X post:** `/x-read https://x.com/...`
+Grok with live X access fetches the post, the thread, and the replies. Returns verbatim text + TL;DR + key claims + reply sentiment + voices to watch. No more screenshots.
+
+**You're planning today's content:** `/x-pulse "AI automation"`
+Grok scans X for what's trending in your topic right now. Returns 3-5 emerging themes (with rep posts + key voices), gaps nobody is filling, hook formats that are working, and 3 specific post ideas you could write today.
+
+**You need real research:** `/research "AI memory tools"`
+Perplexity Sonar Pro pulls a deep dossier with citations: summary, key facts (every claim with a recency marker and source domain), timeline, key players, contrarian views, recommended further reading, open questions. Saved to your vault, auto-opens in Obsidian.
+
+**You want vault-first deep research:** `/research-deep "AI memory tools"`
+Scans your vault for what you already know. Identifies gaps. Spawns 3-5 targeted searches via Perplexity (web) and Grok (X discourse). Synthesizes a delta report: what's new, what's confirmed, contradictions to resolve, recommended vault updates. Vault baseline doesn't get re-researched. Only gaps get filled.
+
+**You hit a great YouTube video:** `/youtube https://youtu.be/...`
+Free transcript via youtube-transcript-api. Optional metadata + top comments via YouTube Data API v3. Gemini (free tier, Grok fallback) summarizes into TL;DR, Key Points, Notable Quotes (verbatim), Themes, Comment Sentiment, and Worth Following Up On. Saved as an AI-first note in your vault. Add `--visual` to also *watch* it: scene-change frame extraction (ffmpeg) that Claude reads with its own vision to capture on-screen text, code, diagrams, and demos the transcript misses.
+
+**You never open Obsidian.** Everything happens through Claude.
+
+---
+
+## Before & After
+
+| | Without this skill | With this skill |
+|---|---|---|
+| Saving decisions | Copy-paste or lose them | Auto-saved to the right project note |
+| Daily notes | Write it yourself, forget half the time | Created automatically |
+| Finding patterns | Re-read dozens of notes | `/emerge` finds them for you |
+| Challenging yourself | Nobody pushes back | `/challenge` uses your own history against you |
+| Session continuity | Re-explain every time | `/world` loads full context in 10 seconds |
+| Ingesting content | Read it, forget it | `/ingest` rewrites 5-15 vault pages from 1 source (URLs, PDFs, audio, screenshots) |
+| Contradictions | You don't know they exist | `/reconcile` resolves them automatically |
+| Synthesis | You connect dots manually | `/synthesize` finds patterns across sources on its own |
+| Sharing vault data | Only Claude can read it | `/export` gives any AI tool a clean snapshot |
+| Facts change over time | Old info gets overwritten | Bi-temporal facts track when it was true AND when the vault learned it |
+| Starting a new session | Re-explain who you are | `CRITICAL_FACTS.md` loads your identity in ~120 tokens |
+| Reading an X thread | Open X, scroll, screenshot, paste | `/x-read [url]` returns post + thread + sentiment + voices |
+| Knowing what to post | Guess what's trending | `/x-pulse` scans X and returns hot themes + gaps + hooks + post ideas |
+| Web research | Open 12 tabs, copy quotes manually | `/research [topic]` returns a sourced dossier with recency markers |
+| Researching what you already know | Re-research from scratch | `/research-deep` scans vault first, fills only the gaps, flags contradictions |
+| YouTube videos | Watch passively, forget | `/youtube [url]` transcript + summary + quotes saved to vault |
+| Vault notes for future agent | Notes for human reading | AI-first rule: every note has "For future agent" preamble + recency markers + citations |
+## More from the author
+
+*The product is above. This is where it came from and where it goes next.*
 
 <p align="center">
   <strong>From the blog</strong> &middot; <a href="https://theaioperator.io">The AI Operator &rarr;</a>
 </p>
 
 <p align="center">
-  <strong>Latest:</strong> <a href="https://theaioperator.io/p/huge-update-on-obsidian-second-brain">"HUGE update on obsidian-second-brain: The Architect"</a><br />
-  <em>v0.10 ships <code>/obsidian-architect</code> &middot; document your codebase into your vault &middot; the full before-and-after</em>
+  <strong>Featured:</strong> <a href="https://theaioperator.io/p/huge-update-on-obsidian-second-brain">"HUGE update on obsidian-second-brain: The Architect"</a><br />
+  <em><code>/obsidian-architect</code> &middot; document your codebase into your vault &middot; the full before-and-after</em>
 </p>
 
 <p align="center">
@@ -111,97 +228,6 @@
 
 ---
 
-## The Problem
-
-You use Claude every day. Every session starts from scratch. You re-explain everything. The conversation ends. Everything disappears.
-
-You take notes in Obsidian. Hundreds of files. They just sit there. You make the same decision twice because you forgot you made it six months ago. Ideas rot in daily notes. Nobody connects the dots.
-
-**Two powerful tools. Completely disconnected.**
-
----
-
-## How this extends Karpathy's LLM Wiki
-
-Karpathy's pattern is brilliant. Drop sources, LLM creates wiki pages, ask questions. This skill takes it further:
-
-| | Karpathy's LLM Wiki | obsidian-second-brain |
-|---|---|---|
-| **New sources** | Append new pages, cross-reference | **Rewrite existing pages.** People get updated, claims revised, stale facts replaced. |
-| **Contradictions** | Flagged, you resolve manually | `/obsidian-reconcile` resolves them automatically |
-| **Patterns** | Surface when you ask | `/obsidian-synthesize` finds unnamed patterns and writes synthesis pages on its own |
-| **When it runs** | On demand, when you prompt | 4 scheduled agents: nightly close, weekly review, contradiction sweep, vault-health check |
-| **Note format** | Human-readable wiki pages | AI-first: `## For future Claude` preamble + frontmatter for LLM retrieval, not human review |
-
-If Karpathy's wiki is a knowledge base you maintain with an LLM, this is a knowledge base that maintains itself.
-
----
-
-## What Happens When You Install This
-
-**After a meeting:** `/obsidian-save`
-Claude pulls out every decision, person, task, and idea and saves each one to the right note. You do nothing.
-
-**You recorded a voice memo:** `/obsidian-ingest meeting.m4a`
-Claude transcribes it with Whisper, identifies speakers, extracts every promise and action item, and distributes across entity pages, task boards, and the daily note.
-
-**You screenshot a whiteboard:** `/obsidian-ingest photo.png`
-Claude reads the image, extracts text and structure, creates concept notes, links to related projects. A photo becomes knowledge.
-
-**You find a great video:** `/obsidian-ingest https://youtube.com/...`
-Claude doesn't summarize into one note. It REWRITES your existing pages. People get updated. Contradictions get resolved. Patterns trigger new synthesis pages. One URL in. The vault is smarter.
-
-**Before a big decision:** `/obsidian-challenge`
-Claude searches your vault for past failures and reversed decisions on the same topic. Pushes back with your own words. Your vault holds you accountable.
-
-**You want to see the big picture:** `/obsidian-visualize`
-Claude generates a visual canvas of your entire vault. Hub nodes centered, color-coded by type, orphans highlighted. Open it in Obsidian and see the shape of your knowledge.
-
-**You go to sleep:** The nightly agent runs 5 phases: closes the day, reconciles contradictions, synthesizes cross-source patterns, heals orphan notes, and rebuilds the index. You wake up to a smarter vault.
-
-**You start a new day:** `/obsidian-daily`
-Claude pulls your calendar events, overdue tasks, and overnight changes into today's note. Your morning starts informed.
-
-**Someone shares an X post:** `/x-read https://x.com/...`
-Grok with live X access fetches the post, the thread, and the replies. Returns verbatim text + TL;DR + key claims + reply sentiment + voices to watch. No more screenshots.
-
-**You're planning today's content:** `/x-pulse "AI automation"`
-Grok scans X for what's trending in your topic right now. Returns 3-5 emerging themes (with rep posts + key voices), gaps nobody is filling, hook formats that are working, and 3 specific post ideas you could write today.
-
-**You need real research:** `/research "AI memory tools"`
-Perplexity Sonar Pro pulls a deep dossier with citations: summary, key facts (every claim with a recency marker and source domain), timeline, key players, contrarian views, recommended further reading, open questions. Saved to your vault, auto-opens in Obsidian.
-
-**You want vault-first deep research:** `/research-deep "AI memory tools"`
-Scans your vault for what you already know. Identifies gaps. Spawns 3-5 targeted searches via Perplexity (web) and Grok (X discourse). Synthesizes a delta report: what's new, what's confirmed, contradictions to resolve, recommended vault updates. Vault baseline doesn't get re-researched. Only gaps get filled.
-
-**You hit a great YouTube video:** `/youtube https://youtu.be/...`
-Free transcript via youtube-transcript-api. Optional metadata + top comments via YouTube Data API v3. Grok summarizes into TL;DR, Key Points, Notable Quotes (verbatim), Themes, Comment Sentiment, and Worth Following Up On. Saved as an AI-first note in your vault. Add `--visual` to also *watch* it: scene-change frame extraction (ffmpeg) that Claude reads with its own vision to capture on-screen text, code, diagrams, and demos the transcript misses.
-
-**You never open Obsidian.** Everything happens through Claude.
-
----
-
-## Before & After
-
-| | Without this skill | With this skill |
-|---|---|---|
-| Saving decisions | Copy-paste or lose them | Auto-saved to the right project note |
-| Daily notes | Write it yourself, forget half the time | Created automatically |
-| Finding patterns | Re-read dozens of notes | `/emerge` finds them for you |
-| Challenging yourself | Nobody pushes back | `/challenge` uses your own history against you |
-| Session continuity | Re-explain every time | `/world` loads full context in 10 seconds |
-| Ingesting content | Read it, forget it | `/ingest` rewrites 5-15 vault pages from 1 source (URLs, PDFs, audio, screenshots) |
-| Contradictions | You don't know they exist | `/reconcile` resolves them automatically |
-| Synthesis | You connect dots manually | `/synthesize` finds patterns across sources on its own |
-| Sharing vault data | Only Claude can read it | `/export` gives any AI tool a clean snapshot |
-| Facts change over time | Old info gets overwritten | Bi-temporal facts track when it was true AND when the vault learned it |
-| Starting a new session | Re-explain who you are | `CRITICAL_FACTS.md` loads your identity in ~120 tokens |
-| Reading an X thread | Open X, scroll, screenshot, paste | `/x-read [url]` returns post + thread + sentiment + voices |
-| Knowing what to post | Guess what's trending | `/x-pulse` scans X and returns hot themes + gaps + hooks + post ideas |
-| Web research | Open 12 tabs, copy quotes manually | `/research [topic]` returns a sourced dossier with recency markers |
-| Researching what you already know | Re-research from scratch | `/research-deep` scans vault first, fills only the gaps, flags contradictions |
-| YouTube videos | Watch passively, forget | `/youtube [url]` transcript + summary + quotes saved to vault |
-| Vault notes for future-Claude | Notes for human reading | AI-first rule: every note has "For future Claude" preamble + recency markers + citations |
 
 ---
 
@@ -215,7 +241,7 @@ Free transcript via youtube-transcript-api. Optional metadata + top comments via
   |                                          |
   +------------------------------------------+
   |                                          |
-  |   LAYER 2: Thinking Tools (7 commands)   |
+  |   LAYER 2: Thinking Tools (9 commands)   |
   |   Claude thinks with you                 |
   |                                          |
   +------------------------------------------+
@@ -237,7 +263,7 @@ Free transcript via youtube-transcript-api. Optional metadata + top comments via
   +------------------------------------------+
 ```
 
-44 commands total. The calendar command (`/obsidian-calendar`) is Claude Code only (needs the Google Calendar MCP), so the Codex / Gemini / OpenCode / Hermes builds ship 43.
+46 commands total. The calendar command (`/obsidian-calendar`) is Claude Code only (needs the Google Calendar MCP), so the Codex / Gemini / OpenCode / Hermes / Pi / Agent Skills builds ship 45.
 
 **Layer 1** saves, organizes, ingests, reconciles, exports, schedules your calendar, and maintains your vault.
 **Layer 2** challenges your ideas, surfaces hidden patterns, bridges unrelated domains, and graduates ideas into projects.
@@ -247,7 +273,7 @@ Free transcript via youtube-transcript-api. Optional metadata + top comments via
 
 ---
 
-## 44 Commands
+## 46 Commands
 
 ### Operations -- Claude remembers
 
@@ -273,7 +299,8 @@ Free transcript via youtube-transcript-api. Optional metadata + top comments via
 | `/obsidian-board-hygiene` | Bulk-triage a board -- surface stale/overdue items, then archive / reschedule / mark-Done in one pass |
 | `/obsidian-project` | Project note with board and daily links |
 | `/obsidian-projects` | Live project status from git + local docs -- infers all context from vault notes, no config required |
-| `/obsidian-health` | Vault audit -- contradictions, gaps, stale claims, orphans |
+| `/obsidian-health` | Vault audit -- contradictions, gaps, stale claims, orphans, freshness violations (the [freshness policy](references/freshness-policy.md): every fact timeless, dated, or a pointer), and typed-edge lint (unknown types, dangling targets, contradiction cycles in the `relations:` graph) |
+| `/obsidian-reindex` | Refreshes the incremental semantic index and reports coverage before and after, with clear embedding-backend failures |
 | `/obsidian-retrieval-eval` | Measures vault search quality -- recall@k + MRR on natural-language questions, with the concrete failures and ranked fixes |
 | `/obsidian-decide [--formal]` | Logs decisions to the right project notes; `--formal` writes a full ADR record (the vault knows why it's structured this way) |
 | `/obsidian-visualize` | Generates a visual canvas map of your second brain |
@@ -286,6 +313,7 @@ Free transcript via youtube-transcript-api. Optional metadata + top comments via
 
 | Command | What it does |
 |---|---|
+| `/obsidian-brainstorm [topic]` | Multi-turn Socratic interview - one question per turn until the idea converges, then a design note with named alternatives |
 | `/obsidian-challenge` | Your vault argues against your idea using your own history |
 | `/obsidian-panel` | Convenes a panel of distinct perspectives on a decision, one verdict each + synthesis |
 | `/obsidian-emerge` | Surfaces patterns from 30 days of notes you never named |
@@ -317,7 +345,7 @@ Powered by xAI Grok (live X access) + Perplexity Sonar (web research) + YouTube.
 
 **Setup:** copy `.env.example` to `~/.config/obsidian-second-brain/.env`, add your keys (xAI, Perplexity, YouTube optional, OpenAI optional for podcast Whisper). Run `install.sh` and answer "y" to the research prompt to do this automatically.
 
-**No keys? `/research` and `/research-deep` still work.** With no `PERPLEXITY_API_KEY` set they automatically fall back to free, key-less sources (Wikipedia, HackerNews, arXiv, Reddit, Lobsters, dev.to, OpenAlex, Semantic Scholar, CrossRef, DuckDuckGo) and Claude synthesizes the dossier. Pass `--free` to force it even when keyed, or `--academic` to restrict to scholarly sources. The other research commands (`/x-read`, `/x-pulse`, `/notebooklm`, `/youtube`) still need their respective keys.
+**No keys? `/research` and `/research-deep` still work.** With no `PERPLEXITY_API_KEY` set they automatically fall back to free, key-less sources (Wikipedia, HackerNews, arXiv, Reddit, Lobsters, dev.to, OpenAlex, Semantic Scholar, CrossRef, DuckDuckGo - plus Tavily/Brave when keyed) and Claude synthesizes the dossier. Pass `--free` to force it even when keyed, or `--academic` to restrict to scholarly sources. The other research commands (`/x-read`, `/x-pulse`, `/notebooklm`, `/youtube`) still need their respective keys.
 
 <details>
 <summary><strong>See the thinking tools in action</strong></summary>
@@ -461,7 +489,7 @@ Pair with `/research-deep` on the same topic. Open-web view + vault-grounded vie
 
 **`/youtube https://youtu.be/...` (add `--visual` to watch, not just read)**
 
-Free transcript via youtube-transcript-api + optional metadata + comments via YouTube Data API v3 (free tier). Grok summarizes into TL;DR, Key Points, Notable Quotes (verbatim), Themes, Comment Sentiment, and Worth Following Up On. ~$0.04 for the Grok call. Frontmatter includes view count, channel, published date, like count for Dataview queries.
+Free transcript via youtube-transcript-api + optional metadata + comments via YouTube Data API v3 (free tier). Gemini (gemini-2.5-flash, free tier) summarizes into TL;DR, Key Points, Notable Quotes (verbatim), Themes, Comment Sentiment, and Worth Following Up On - Grok is the automatic fallback (~$0.04) when no Gemini key is set. Frontmatter includes view count, channel, published date, like count for Dataview queries.
 
 `--visual` downloads the video (yt-dlp, <=720p) and extracts one frame per scene change (ffmpeg scene detection, not a fixed timer), so on-screen text, code, diagrams, slides, UI, and b-roll are captured. Claude reads the frames with its own vision (no extra API call) and writes a timestamp-keyed `## Visual notes` section; hero frames are embedded in the note. Requires `yt-dlp` + `ffmpeg` on PATH; skips gracefully if missing. `--max-frames N` caps frames read (default 24). Pipeline ported from [claude-watch](https://github.com/taoufik123-collab/claude-watch) / [claude-video](https://github.com/bradautomates/claude-video) (MIT).
 
@@ -494,6 +522,8 @@ This vault rewrites itself with every input:
 
 The vault after a week is fundamentally different from the vault you started with.
 
+**The maintenance layer has a name: OKM (Open Knowledge Metabolism).** Storage is the easy half; keeping stored knowledge *true* is the hard half, and it is where this project spends its effort. OKM is the open spec behind that: **every stored fact must be timeless, dated, or a pointer.** Slow-changing knowledge (how things work, decisions, ownership) is stored; fast-changing facts (counts, statuses, balances) are linked to where they live with an `as of` stamp, never copied in to rot. The rule is a one-page spec ([references/freshness-policy.md](references/freshness-policy.md)), enforced by a linter ([scripts/freshness_lint.py](scripts/freshness_lint.py)) that `/obsidian-health` runs. Where OKF (Google's Open Knowledge Format) standardizes how agent knowledge is *written*, OKM is a companion spec for keeping it *true* - the metabolism to OKF's format. One spec, one reference linter, no second implementation yet. It is storage-agnostic: any folder of markdown an AI maintains, not just Obsidian vaults.
+
 ---
 
 ## Choose Your Preset
@@ -508,7 +538,7 @@ Pick your role at bootstrap. Each preset creates tailored folder structures, tem
 | **researcher** | Academics, analysts, deep-divers | Reading / Processing / Synthesized |
 
 ```bash
-python bootstrap_vault.py --path ~/my-vault --name "Your Name" --preset builder
+uv run python scripts/bootstrap_vault.py --path ~/my-vault --name "Your Name" --preset builder
 ```
 
 No preset? You get a general-purpose vault that works for everyone.
@@ -523,6 +553,8 @@ No preset? You get a general-purpose vault that works for everyone.
 PostCompact -> obsidian-bg-agent.sh -> claude -p (headless) -> vault updated
 ```
 
+**What arming it costs.** The headless run uses `--dangerously-skip-permissions`, because nobody is there to approve each write. That is why the agent ships inert and stays opt-in. Its tool surface is pinned to `Read,Write,Edit,Glob,Grep`, so it cannot run shell commands or reach the network, and it only adds and updates - it never deletes or merges. If that trade is not one you want, leave it off; every other command works without it.
+
 **Scheduled:**
 
 | Agent | When | What |
@@ -533,6 +565,8 @@ PostCompact -> obsidian-bg-agent.sh -> claude -p (headless) -> vault updated
 | `health` | Sundays 9 PM | Vault health audit |
 
 **Save reminders:** Claude nudges you to `/obsidian-save` after 10+ exchanges or when you say "done" or "thanks". No lost conversations.
+
+**Bounded recall (opt-in):** on every prompt, a `UserPromptSubmit` hook injects a small brief of the most relevant vault notes - max 4 notes, ~900 chars - or **nothing at all** when confidence is low (abstention beats noise). Read-only, fail-closed, and every inject/abstain decision is logged to `<vault>/.claude-runs/` for audit. Ships inert; arm it with `OBSIDIAN_RECALL_ENABLED=1` per [hooks/recall.hook.example.json](hooks/recall.hook.example.json).
 
 ---
 
@@ -567,32 +601,82 @@ vault/
 
 ## Install
 
-> **One codebase, six platforms.** Pick yours below. The vault behavior is identical across all of them; only the install path and the dispatcher file (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.pi/`) differ.
+> **One codebase, seven builds.** Pick yours below. The vault behavior is identical across all of them; only the install path and the dispatcher file (`CLAUDE.md` / `AGENTS.md` / `GEMINI.md` / `.agents/skills/` / `.pi/`) differ.
+
+Rather than ask you to take that on faith, here is what each build currently passes:
+
+<!-- conformance:start -->
+| Build | Emits a real tree | Script paths resolved | Docs reachable | Toolkit runnable |
+|---|---|---|---|---|
+| Agent Skills | pass | pass | pass | pass |
+| Claude Code | pass | pass | pass | pass |
+| Codex CLI | pass | pass | pass | pass |
+| Gemini CLI | pass | pass | pass | pass |
+| Hermes | pass | pass | pass | pass |
+| OpenCode | pass | pass | pass | pass |
+| Pi | pass | pass | pass | pass |
+
+*Generated by `scripts/conformance_report.py`, verified in CI on every push. Each build is compiled from the same source tree, then checked for a non-empty output, a resolved script root, reference paths that actually exist in that build, and a Python project shipped beside the scripts. A red cell here is a real red cell, not a missing test.*
+<!-- conformance:end -->
+
+
+
+**Prerequisites:** [Claude Code](https://claude.com/claude-code) (or one of the other six platforms below), `git`, and [`uv`](https://docs.astral.sh/uv/) for the Python helpers (health check, research toolkit, bootstrap). `jq` is **required for the classic script install** - `scripts/setup.sh` uses it to edit `~/.claude/settings.json` safely and exits if it is missing. Not needed on the plugin path. Optional: [Ollama](https://ollama.com) for local semantic search, `openai-whisper` (installed on first audio ingest, pulls in PyTorch). No API keys needed for the core vault commands.
 
 ### Claude Code (default)
 
-One line:
+**Native plugin install (recommended).** Inside any Claude Code session:
+
+```
+/plugin marketplace add eugeniughelbur/obsidian-second-brain
+/plugin install obsidian-second-brain@obsidian-second-brain
+```
+
+<img src="media/plugin-install.gif" alt="Installing obsidian-second-brain through the Claude Code plugin marketplace: marketplace add, plugin install, status enabled." width="100%" />
+
+That ships all 46 commands, the skill manual, the session-context hook, the opt-in background agent (inert until you arm it - see [hooks/postcompact.hook.example.json](hooks/postcompact.hook.example.json)), and the vault MCP server. Then tell Claude where your vault lives by adding to the `env` section of `~/.claude/settings.json`:
+
+```json
+"env": { "OBSIDIAN_VAULT_PATH": "/path/to/your/vault" }
+```
+
+Restart Claude Code, then run `/obsidian-second-brain:obsidian-init` inside your vault. Plugin commands are namespaced, so every command is `/obsidian-second-brain:<name>` (type `/obsidian-second-brain:` to see all 45). Update later with `/plugin update obsidian-second-brain`.
+
+**Classic install (script).** Use this if you want the commands as bare names (`/obsidian-init`, `/research`, ...) or you are developing the skill and want live edits. One line (clones the skill, installs the slash commands, registers the session-context hook, and offers the research env):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/eugeniughelbur/obsidian-second-brain/main/scripts/quick-install.sh | bash
 ```
 
-Or two commands:
+Or step by step:
 
 ```bash
 git clone https://github.com/eugeniughelbur/obsidian-second-brain ~/.claude/skills/obsidian-second-brain
+bash ~/.claude/skills/obsidian-second-brain/install.sh
 bash ~/.claude/skills/obsidian-second-brain/scripts/setup.sh "/path/to/your/vault"
 ```
 
-Then: `/obsidian-init`
+> Cloning it? A [star](https://github.com/eugeniughelbur/obsidian-second-brain) costs you nothing and is how the next person finds this.
+
+**No vault yet?** Create a ready-to-use one first (folders, templates, boards, dashboards - passes its own health check out of the box):
+
+```bash
+cd ~/.claude/skills/obsidian-second-brain
+uv run python scripts/bootstrap_vault.py --path ~/Documents/MyVault --name "Your Name"
+bash scripts/setup.sh ~/Documents/MyVault
+```
+
+Then open Claude Code and run `/obsidian-init` inside your vault.
 
 ### Codex CLI / Gemini CLI / OpenCode
+
+> **Codex and OpenCode users: prefer the [Agent Skills build](#google-antigravity-and-any-agentsskills-harness) below.** The standalone `codex-cli` and `opencode` builds are deprecated and superseded by it; both print that notice in their own `INSTALL.md`. They still work, and will until they are removed. Gemini CLI has no replacement build, so this is the right path there.
 
 ```bash
 git clone https://github.com/eugeniughelbur/obsidian-second-brain
 cd obsidian-second-brain
 bash scripts/build.sh --platform codex-cli   # or gemini-cli, or opencode
-cp -R dist/codex-cli/. /path/to/your/vault/   # or .gemini-cli / .opencode/
+cp -R dist/codex-cli/. /path/to/your/vault/   # or dist/gemini-cli/. or dist/opencode/.
 ```
 
 Then start your CLI from the vault root.
@@ -600,6 +684,23 @@ Then start your CLI from the vault root.
 The **Codex build emits native [Codex Agent Skills](https://developers.openai.com/codex/skills)**: one skill per command under `.agents/skills/<name>/SKILL.md`. Codex discovers them automatically with progressive disclosure (only each skill's name + description load until it's selected), and they run **in your current session** - invoke one with `$<name>`, pick it from `/skills`, or just describe the task and let Codex match it implicitly. `AGENTS.md` stays as a thin always-on manual (vault conventions + the AI-first rule); there is no routing table to maintain because the skill list is the router. The Gemini / OpenCode builds still emit a `GEMINI.md` / `AGENTS.md` dispatcher with an auto-generated routing table to command files under `.gemini/` / `.opencode/`.
 
 Run `bash scripts/build.sh` with no arguments to build every platform at once. See [`dist/<platform>/INSTALL.md`](scripts/build.sh) after building for platform-specific notes.
+
+### Google Antigravity (and any `.agents/skills/` harness)
+
+Antigravity, Codex CLI, OpenCode, and GitHub Copilot CLI have all converged on the open [Agent Skills](https://github.com/vercel-labs/skills) standard: workspace skills at `.agents/skills/<name>/SKILL.md`. The `agent-skills` build emits one spec-compliant tree they all read - and any future harness on the same standard works with zero repo changes.
+
+```bash
+git clone https://github.com/eugeniughelbur/obsidian-second-brain
+cd obsidian-second-brain
+bash scripts/build.sh --platform agent-skills
+
+# install with skills.sh (writes one shared .agents/skills/ tree), from your vault root:
+npx skills add /path/to/obsidian-second-brain/dist/agent-skills -a antigravity -a codex -a opencode
+# or copy manually, no skills.sh required:
+cp -R dist/agent-skills/skills/. /path/to/your/vault/.agents/skills/
+```
+
+Each command becomes a skill under `.agents/skills/`; a shared `obsidian-core` skill carries the Python toolkit and the AI-first write spec the others call into. The skills are self-sufficient (they resolve the vault root from `$OBSIDIAN_VAULT_PATH` or the working directory and embed the write spec), so they need no session-start hook. This is the recommended path for **Google Antigravity**, whose skill discovery differs from classic Gemini CLI: Antigravity still reads the `gemini-cli` build's `GEMINI.md` as passive context, but only detects active skills under `.agents/skills/`, so install this build (not `gemini-cli`) if you want Antigravity to surface the commands as skills. See [`dist/agent-skills/INSTALL.md`](scripts/build.sh) for the full story (skills.sh, manual copy, per-harness notes, and the optional always-on vault-routing rule).
 
 ### Pi Coding Agent
 
@@ -655,7 +756,18 @@ What to expect (open models follow instructions less reliably than Claude, so th
 
 ### Research toolkit (optional)
 
-The 6 research commands need API keys. Run `install.sh` and answer "y" to the research prompt. That sets up `~/.config/obsidian-second-brain/.env`. Or do it manually:
+The 7 research commands use API keys (2 of them fall back to free sources without any).
+
+**Installed the plugin?** You have no repo checkout, so `install.sh`, `.env.example`, and `uv sync` are not on your disk. Create the env file by hand instead - the research scripts read this path regardless of how you installed, and the plugin's MCP server already runs under `uv run --with 'mcp<2'`, so there is nothing to `uv sync`:
+
+```bash
+mkdir -p ~/.config/obsidian-second-brain
+touch ~/.config/obsidian-second-brain/.env
+chmod 600 ~/.config/obsidian-second-brain/.env
+# then paste the keys from the table below into that file
+```
+
+**Installed from a clone?** Run `install.sh` and answer "y" to the research prompt, which does the same thing for you. Or do it manually:
 
 ```bash
 mkdir -p ~/.config/obsidian-second-brain
@@ -671,22 +783,24 @@ Keys you need:
 |---|---|---|---|
 | `XAI_API_KEY` | [console.x.ai](https://console.x.ai) | `/x-read`, `/x-pulse`, `/research-deep` X pulse, `/youtube` summary | Pay-per-use, ~$0.05/call |
 | `PERPLEXITY_API_KEY` | [perplexity.ai/settings/api](https://perplexity.ai/settings/api) | `/research`, `/research-deep` | Pay-per-use, ~$0.02-$0.50/call |
-| `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `/notebooklm` (vault-grounded synthesis via Gemini File Search) | Free tier covers it. Paid: ~$0.004/call (Flash), ~$0.06/call (Pro). |
+| `GEMINI_API_KEY` | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | `/notebooklm`, `/youtube` summary (Grok fallback) (vault-grounded synthesis via Gemini File Search) | Free tier covers it. Paid: ~$0.004/call (Flash), ~$0.06/call (Pro). |
 | `YOUTUBE_API_KEY` | [console.cloud.google.com](https://console.cloud.google.com) | `/youtube` metadata + comments (optional, transcripts free without) | Free tier 10k units/day |
 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com/api-keys) | `/podcast` Whisper transcription (optional, falls back to show-notes if unset) | ~$0.006/min |
 
-Without keys, the 35 non-research commands work fully, and `/research` + `/research-deep` fall back to free, key-less sources. The rest of the research toolkit degrades gracefully.
+Without keys, the 38 non-research commands work fully, and `/research` + `/research-deep` fall back to free, key-less sources. The rest of the research toolkit degrades gracefully.
 
 ### Semantic search (optional, off by default)
 
-Search (`/obsidian-find` and the MCP connector) works out of the box as fast keyword search - **no setup, no model, nothing to install.** You can optionally add a meaning-based layer that finds notes even when your query shares no words with them. It is opt-in by setup and, when present, fuses with keyword search (measured best of both: keyword recall@10 80% -> 91%, paraphrased 17% -> ~46% on a 1,000-note vault). If the model is ever unreachable, search silently falls back to keyword - it never breaks or hangs.
+Search (`/obsidian-find` and the MCP connector) works out of the box as fast keyword search - **no setup, no model, nothing to install.** You can optionally add a meaning-based layer that finds notes even when your query shares no words with them. It is opt-in by setup and, when present, leads the ranking with keyword search as tiebreak and freshness signals on top (measured on a ~2,350-note vault: keyword recall@10 1.0, paraphrased-question recall@10 77%, and non-English queries went from 13% to 63% recall@5, a 5x gain, with the multilingual default model - full reference in scripts/eval/BASELINE.md). If the model is ever unreachable, search silently falls back to keyword - it never breaks or hangs.
 
 Two ways to provide the embedding model:
 
-- **Local + private (recommended), via [Ollama](https://ollama.com):** install Ollama, `ollama pull mxbai-embed-large`, then build the index once: `uv run python scripts/eval/semantic_search.py --path "<vault>" --build`. Your notes never leave the machine.
+- **Local + private (recommended), via [Ollama](https://ollama.com):** install Ollama, `ollama pull bge-m3`, then build the index: `uv run python scripts/eval/semantic_search.py --path "<vault>" --build`. Your notes never leave the machine. Re-run it as you write - see below.
 - **No Ollama? Any OpenAI-compatible endpoint.** Set `OBSIDIAN_EMBED_BACKEND=openai`, `OBSIDIAN_EMBED_URL=<base url>`, `OBSIDIAN_EMBED_MODEL=<model>`, and `OBSIDIAN_EMBED_KEY=<key if needed>`. This covers other local runtimes (LM Studio, llama.cpp's server) for free/private use, **or** a cloud API (OpenAI, a gateway) for top quality - note a cloud endpoint means note text leaves your machine, so use `OBSIDIAN_EMBED_EXCLUDE=<folder prefixes>` to keep private folders local-only.
 
-Knobs: `OBSIDIAN_SEARCH_SEMANTIC=0` disables the layer entirely; the index is rebuilt incrementally (only changed notes re-embed) so re-run `--build` occasionally as the vault grows. The index file is large and regenerable - gitignore it.
+**Keep it current.** The index does not update itself, and a note that is not in it can only be found by literal word match - which on a query in another language means it cannot be found at all. Re-run `--build` regularly; it is incremental, so only new and changed notes re-embed. `/obsidian-health` reports coverage, and search warns on stderr once the index falls more than 5% behind (tune with `OBSIDIAN_INDEX_STALE_WARN_PCT`).
+
+Knobs: `OBSIDIAN_SEARCH_SEMANTIC=0` disables the layer entirely. The index file is large and regenerable - gitignore it.
 
 ---
 
@@ -702,10 +816,10 @@ This is a Claude Code skill, not an Obsidian plugin. An Obsidian plugin lives in
 An Obsidian plugin runs inside Obsidian and is written in TypeScript against Obsidian's plugin API. A Claude Code skill for Obsidian runs inside Claude Code and is written as a set of markdown command files plus optional Python scripts. Plugins are constrained to what Obsidian's API exposes. Skills are constrained only by what Claude can do in your shell, which is why this skill can do things plugins can't: pull live web research into vault notes, run scheduled agents that update your vault while you sleep, and synthesize knowledge across years of notes using Anthropic's Claude.
 
 ### How do I add this Obsidian Claude skill to Claude Code?
-Run the one-line installer from the Install section below. It clones the repo to `~/.claude/skills/obsidian-second-brain` and symlinks the slash commands into `~/.claude/commands/` so Claude Code picks them up automatically. Restart Claude Code after install. The skill loads on every session that touches an Obsidian vault.
+Run the one-line installer from the [Install](#install) section above. It clones the repo to `~/.claude/skills/obsidian-second-brain` and symlinks the slash commands into `~/.claude/commands/` so Claude Code picks them up automatically. Restart Claude Code after install. The skill loads on every session that touches an Obsidian vault.
 
 ### Does this work with Codex CLI, Gemini CLI, or OpenCode?
-Yes. The repo ships a build script that compiles the platform-neutral source into six platform-specific outputs: Claude Code (slash commands + `CLAUDE.md`), Codex CLI (native Agent Skills), Gemini CLI (`GEMINI.md` + `.gemini/commands/`), OpenCode (`AGENTS.md` + `.opencode/commands/`), Hermes (native skills), and Pi (`package.json` + `.pi/`). Run `bash scripts/build.sh --platform codex-cli` (or another platform name), then copy the resulting `dist/<platform>/` tree into your vault. The non-Claude builds auto-generate a routing table that maps natural-language triggers to command files, so the same 43 cross-platform commands work no matter which CLI you use (the calendar command is Claude Code only, since it depends on the Google Calendar MCP). The vault rules (AI-first notes, frontmatter, wikilinks, recency markers) are identical across all six platforms.
+Yes. The repo ships a build script that compiles the platform-neutral source into seven platform-specific outputs: Claude Code (slash commands + `CLAUDE.md`), Codex CLI (native Agent Skills), Gemini CLI (`GEMINI.md` + `.gemini/commands/`), OpenCode (`AGENTS.md` + `.opencode/commands/`), Hermes (native skills), Pi (`package.json` + `.pi/`), and a unified Agent Skills build (one `.agents/skills/` tree for Antigravity / Codex / OpenCode / GitHub Copilot CLI and any other Agent Skills harness). Run `bash scripts/build.sh --platform codex-cli` (or another platform name), then copy the resulting `dist/<platform>/` tree into your vault. The non-Claude builds either emit native skills or auto-generate a routing table that maps natural-language triggers to command files, so the same 44 cross-platform commands work no matter which CLI you use (the calendar command is Claude Code only, since it depends on the Google Calendar MCP). The vault rules (AI-first notes, frontmatter, wikilinks, recency markers) are identical across every platform.
 
 ### Does this run on Hermes or other open models?
 Yes. The skill is model-agnostic - the OpenCode, Codex, and Gemini builds are plain instruction files, so they run on whatever model the host CLI uses, including open models like Nous Research Hermes. The most common path is OpenCode pointed at Hermes via OpenRouter (or a local Hermes through Ollama / LM Studio for full privacy). See "Run on Hermes / open models" in the Install section for the exact config. Honest expectation: the core save / daily / capture / find / task commands and free-mode `/research` hold up well; the sub-agent-heavy and deep-synthesis commands (`/obsidian-architect`, `/obsidian-reconcile`, `/research-deep`) want a stronger instruction-follower, so prefer `hermes-4-405b` or Claude for those.
@@ -726,16 +840,19 @@ Yes - that is the headline of v0.10 ("The Architect"). The `/obsidian-architect`
 `/obsidian-architect` writes generated content inside sentinel markers (`<!-- @generated -->` blocks). On a re-run it replaces only what is inside those blocks and leaves your `<!-- @user -->` blocks (and anything outside the markers) untouched. So you can hand-annotate the architecture notes and re-run the scan as the code evolves without losing your additions.
 
 ### What is the AI-first vault rule?
-The principle that vault notes are written for future-Claude to retrieve and reason over, not for human reading. Notes have machine-readable structure, recency markers per claim, mandatory `[[wikilinks]]`, source URLs preserved verbatim, and confidence levels. See [`references/ai-first-rules.md`](references/ai-first-rules.md) for the full specification with frontmatter schemas per note type.
+The principle that vault notes are written for future agent to retrieve and reason over, not for human reading. Notes have machine-readable structure, recency markers per claim, mandatory `[[wikilinks]]`, source URLs preserved verbatim, and confidence levels. See [`references/ai-first-rules.md`](references/ai-first-rules.md) for the full specification with frontmatter schemas per note type.
 
 ### Is this safe to run on my existing vault?
 Yes. The skill never deletes or modifies notes destructively without explicit confirmation. Existing notes stay as-is. New notes follow the AI-first rule. `/obsidian-health` flags pre-AI-first notes so you can update them on your own schedule.
+
+### What is OKM (Open Knowledge Metabolism)?
+The maintenance layer, given a name. Its one rule: every stored fact must be timeless, dated, or a pointer - so a knowledge folder can never quietly fill with facts that used to be true. Slow knowledge is stored; fast facts are linked to their live source with an `as of` stamp instead of copied in. It ships as a one-page spec ([`references/freshness-policy.md`](references/freshness-policy.md)) and a stdlib-only linter ([`scripts/freshness_lint.py`](scripts/freshness_lint.py)) that `/obsidian-health` runs, and it is storage-agnostic (any markdown folder an AI maintains). Think of it as the companion to OKF (Open Knowledge Format): OKF standardizes how knowledge is written, OKM keeps it true.
 
 ### What does `/research-deep` do that `/research` doesn't?
 `/research` runs a single Perplexity query and returns a dossier with citations. `/research-deep` is vault-first: it scans your existing notes, identifies what you already know about the topic, spawns 3-5 targeted follow-up searches to fill only the gaps, and produces a delta report (what's new, what's confirmed, contradictions to resolve, recommended vault updates). Vault-first means you stop re-researching what's already in your notes.
 
 ### What do the research commands cost?
-Approximate per-call costs as of 2026-04: `/x-read` ~$0.05, `/x-pulse` ~$0.13, `/research` ~$0.04, `/research-deep` ~$0.40-$0.80, `/youtube` ~$0.04, `/podcast` ~$0.04 Grok call (plus ~$0.006/min if Whisper is used; free if RSS provides a `<podcast:transcript>` tag or you accept the show-notes fallback). Costs for Grok calls are logged to `~/.research-toolkit/usage.log` for visibility. No hard caps. You're trusted to monitor your own spend.
+Approximate per-call costs as of 2026-04: `/x-read` ~$0.05, `/x-pulse` ~$0.13, `/research` ~$0.04, `/research-deep` ~$0.40-$0.80, `/youtube` ~$0.04, `/podcast` ~$0.04 Grok call (plus ~$0.006/min if Whisper is used; free if RSS provides a `<podcast:transcript>` tag or you accept the show-notes fallback). Costs for paid calls (Grok, Perplexity, Gemini) are logged to `~/.research-toolkit/usage.log` for visibility. No hard caps. You're trusted to monitor your own spend.
 
 ### Can I use this on Windows or Linux?
 The core vault commands work anywhere Claude Code runs. `install.sh` supports Linux, macOS, and Windows (MSYS2/Git Bash): on Linux/macOS slash commands are symlinked so `git pull` keeps them current; on Windows they are copied and `update.sh` refreshes them. The research toolkit auto-open step uses `open` on macOS, `xdg-open` on Linux, and `notepad` on Windows.
@@ -750,6 +867,12 @@ cd ~/.claude/skills/obsidian-second-brain && git pull
 On Linux/macOS: nothing else to run - slash commands are symlinked so they pick up the new files automatically. On Windows: also run `bash update.sh` to refresh the copied command files. Restart Claude Code after either path. See [CHANGELOG.md](CHANGELOG.md) for what's in each release.
 
 ### Where do I file issues or feature requests?
+Command reference: https://eugeniughelbur.github.io/obsidian-second-brain/ - every command, with the plain-language phrases that trigger it in English, Spanish, Portuguese and Simplified Chinese.
+
+Retrieval benchmark: [scripts/eval/BENCHMARK.md](scripts/eval/BENCHMARK.md) - a reproducible 300-note synthetic corpus and three query sets, so the search numbers are something you can run yourself rather than something this README claims.
+
+The rule on its own: [AI-FIRST.md](AI-FIRST.md) - the note spec as a 50-line block you can paste into any `CLAUDE.md` or `AGENTS.md`. Installs nothing, works without this project, keep the attribution line.
+
 GitHub Issues: https://github.com/eugeniughelbur/obsidian-second-brain/issues. PRs welcome, see Contributing below.
 
 ---
@@ -770,16 +893,26 @@ Inspired by [Andrey Karpathy's LLM-Wiki](https://gist.github.com/karpathy/442a6b
 
 ## Contributing
 
-PRs welcome:
+**Want a specific place to start?** [Good first issues](https://github.com/eugeniughelbur/obsidian-second-brain/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) are scoped to name the exact files and lines, what to watch out for, and how big the change is. They range from adding trigger phrases in a language you speak (no Python at all) to a one-command lint fix to a new slash command. Comment on one to claim it.
+
+PRs welcome more generally:
 - New thinking tools
 - Note type schemas (habits, books, investments)
 - MCP integrations (Calendar, Linear, Slack)
 - Alternative vault structures
 - VS Code / Cursor setup guides
 
+**Own a platform.** Seven builds, one maintainer who can test two. [adapters/OWNERS.md](adapters/OWNERS.md) has the open list; using the platform is the whole qualification, and your handle ships inside that build.
+
 Building a domain-specific fork (academic, legal, finance, medical)? See [ECOSYSTEM.md](ECOSYSTEM.md). The upstream repo ships primitives; forks own the domain knowledge. First proof case: [`scholarbrain`](https://github.com/SHzzzAyys/scholarbrain) for academic research.
 
 Customizing your own fork? Copy [`references/DELTAS.template.md`](references/DELTAS.template.md) to a `DELTAS.md` at your fork root and record your local deviations there. Upstream never touches that file, so you can keep merging `upstream/main` cleanly instead of fighting conflicts in stock commands.
+
+### Contributors
+
+This project is maintained by one person but built with many. 18+ external contributors have landed merged PRs - security fixes, platform ports (Pi came from a contributor), Windows compatibility, translations, and the first automated test. Ideas from closed or stalled PRs get reimplemented with the original author credited as co-author rather than dropped. See the full list on the [contributors graph](https://github.com/eugeniughelbur/obsidian-second-brain/graphs/contributors).
+
+If your PR goes quiet mid-review, that is normal life - the idea stays on the table, and if it lands later you stay on the commit.
 
 ---
 

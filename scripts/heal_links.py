@@ -8,14 +8,18 @@ resolve, so vault_health counts them as "wanted notes". This script repoints eac
 link to the real note when exactly one note is an unambiguous match, preserving the
 original text as a display alias: [[kebab-basename|Host iptables rules ...]].
 
-Matching is deterministic and safe:
+Only certain matches are ever auto-applied:
   1. exact stem/alias match,
-  2. slug match - lowercase both sides and collapse every run of non-alphanumeric
-     characters to a single space, so "Title Case", "kebab-case", punctuation and
-     stray slashes all compare equal (this is what resolves the Title<->kebab case),
-  3. a last-resort fuzzy match (difflib) only when exactly one close name exists.
-Ambiguous links (two or more matches) and links with no match are counted and left
-alone - those judgment calls belong to the AI triage loop (triage_links.py).
+  2. faithful slug match - casefold both sides, fold diacritics (every alphabet
+     survives, so "Привет Мир" matches "привет-мир"), and collapse separator runs
+     to a single space, so "Title Case", "kebab-case", punctuation and stray
+     slashes all compare equal (this is what resolves the Title<->kebab case).
+     A slug that deleted meaning (C++ -> c) or folded to nothing is NOT certain
+     and goes to triage instead; rewrites never touch code fences or inline code.
+A fuzzy match (difflib) is only a GUESS - at any workable cutoff it will confuse
+"Google Ads" with "Google Docs" and "ADR-2026-05-17" with "ADR-2026-05-11". So fuzzy
+hits, ambiguous slugs (2+ candidates), and no-match links are never auto-fixed: they
+are counted and handed to the AI triage loop (triage_links.py), which decides.
 
 The score is vault_health.check_wanted_notes, so this count == the health check's count.
 
@@ -28,26 +32,51 @@ Incremental loop, bounded to N fixes, recounting each pass so you can watch:
 """
 import argparse
 import re
+import unicodedata
 from collections import Counter, defaultdict
 from difflib import get_close_matches
 from pathlib import Path
 
 # reuse the EXACT detection the health check uses, so our count == its count
-from vault_health import load_vault, check_wanted_notes
+from note_io import read_exact, write_exact
+from vault_health import check_wanted_notes, load_vault, load_vault_config, replace_outside_code
 
 DECORATION = re.compile(r"[#|].*$")          # a #heading anchor or |display alias
 LINK_IN_MSG = re.compile(r"\[\[(.+?)\]\] - wanted by ")
-NON_ALNUM = re.compile(r"[^a-z0-9]+")         # any run of non-alphanumerics
-PLACEHOLDER = set("*{}<>")                    # template/glob junk, never auto-fix
+NON_WORD = re.compile(r"[\W_]+")              # any run of non-word chars, Unicode-aware
+PLACEHOLDER = set("*{}<>[]")                  # template/glob/bracket junk, never auto-fix
+# Characters slugify may silently fold away: separators per the Title<->kebab
+# contract (plus en-dash U+2013 / em-dash U+2014, common in vault filenames).
+# Folding anything ELSE away (+, #, &, emoji, ...) deletes meaning, so the match
+# is a guess, not a certainty - see slug_is_faithful.
+SAFE_FOLDED = set(" \t\r\n-_/\\.,:;()'\"!?|") | {"\u2013", "\u2014"}
+
+
+def _fold(text: str) -> str:
+    """NFKD-decompose and drop combining marks: accents fold, alphabets survive."""
+    return "".join(
+        c for c in unicodedata.normalize("NFKD", text) if not unicodedata.combining(c)
+    )
 
 
 def slugify(text: str) -> str:
-    """Lowercase and collapse every non-alphanumeric run to one space.
+    """Casefold, fold diacritics, and collapse every non-word run to one space.
 
     "Host iptables rules", "host-iptables-rules" and "Flat /24 LAN" all normalize to a
     space-joined token stream, so a Title-cased wikilink matches its kebab-cased file.
+    Only decorations fold: accents drop ("Ivan" == "Ivan" with diacritics) but every
+    alphabet survives ("Привет Мир" == "привет-мир"). The old ASCII-only fold erased
+    whole alphabets, so [[Ελλάδα]], [[مرحبا]] and [[🚀🚀]] all slugged to "" and
+    "matched" whichever single note also folded to nothing (stress-test fix 3/24).
     """
-    return NON_ALNUM.sub(" ", text.lower()).strip()
+    return NON_WORD.sub(" ", _fold(text).casefold()).strip()
+
+
+def slug_is_faithful(text: str) -> bool:
+    """True when slugify lost nothing meaningful: every folded character was a
+    separator. "C++" slugs to "c", deleting the ++ that distinguishes it from C -
+    an unfaithful slug match is a guess and belongs in triage, not auto-fix."""
+    return all(c.isalnum() or c in SAFE_FOLDED for c in _fold(text))
 
 
 def base_target(link: str) -> str:
@@ -69,10 +98,14 @@ def index_notes(notes):
     for rel, note in notes.items():
         stem = note["stem"]
         name_to_rel.setdefault(stem.lower(), rel)
-        slug_to_rels[slugify(stem)].add(rel)
+        # An empty slug (emoji-only or symbol-only title) must never be a match
+        # key: "" == "" would pair unrelated names (stress-test fix 3/24).
+        if s := slugify(stem):
+            slug_to_rels[s].add(rel)
         for a in note["aliases"]:
             name_to_rel.setdefault(a.lower(), rel)
-            slug_to_rels[slugify(a)].add(rel)
+            if s := slugify(a):
+                slug_to_rels[s].add(rel)
     stems = list({note["stem"].lower() for note in notes.values()})
     return name_to_rel, stems, slug_to_rels
 
@@ -84,16 +117,20 @@ def classify(link, name_to_rel, stems, slug_to_rels):
     low = base.lower()
     if low in name_to_rel:
         return "already_real", name_to_rel[low]
-    # deterministic slug match on the FULL link (base_target mangles slashes like "/24")
-    rels = slug_to_rels.get(slugify(link))
+    # deterministic slug match on the FULL link (base_target mangles slashes like "/24"),
+    # and only when slugging the link deleted nothing meaningful - otherwise the
+    # "match" was manufactured by the fold (C++ -> c) and belongs in triage.
+    slug = slugify(link)
+    rels = slug_to_rels.get(slug) if slug and slug_is_faithful(link) else None
     if rels:
         if len(rels) == 1:
             return "easy_fix", next(iter(rels))
         return "ask_claude", sorted(rels)
+    # A fuzzy hit is a GUESS, never a certainty: at cutoff 0.84 difflib matches
+    # "Google Ads" -> "Google Docs" and "ADR-2026-05-17" -> "ADR-2026-05-11". Never
+    # auto-apply it; hand any close names to triage so a human/AI makes the call.
     near = get_close_matches(low, stems, n=2, cutoff=0.84)
-    if len(near) == 1:
-        return "easy_fix", name_to_rel[near[0]]
-    if len(near) > 1:
+    if near:
         return "ask_claude", [name_to_rel[n] for n in near]
     return "no_target", None
 
@@ -112,12 +149,11 @@ def _rewrite(text, link, new_stem):
 
     Returns (new_text, count_replaced). Only bare links are touched; an already-aliased
     [[x|y]] is never matched here because check_wanted_notes reports the target only.
+    Occurrences inside code fences and inline code are left alone - the wanted-link
+    counter never saw them, so editing them would corrupt example code and make
+    apply exceed what dry-run promised.
     """
-    literal = f"[[{link}]]"
-    n = text.count(literal)
-    if n:
-        text = text.replace(literal, f"[[{new_stem}|{link}]]")
-    return text, n
+    return replace_outside_code(text, f"[[{link}]]", f"[[{new_stem}|{link}]]")
 
 
 def _collect_safe(wanted, name_to_rel, stems, slug_to_rels):
@@ -142,8 +178,13 @@ def _collect_safe(wanted, name_to_rel, stems, slug_to_rels):
 
 
 def dry_run(vault):
-    notes = load_vault(vault)
-    wanted = check_wanted_notes(notes, vault)
+    # Honor .vault-config.json the way vault_health does. This tool REWRITES
+    # notes, so scanning a wider set than the read-only health check means
+    # rewriting files the user explicitly excluded - and it breaks this
+    # module's promise that its count equals the health check's count.
+    excludes = load_vault_config(vault)
+    notes = load_vault(vault, excludes)
+    wanted = check_wanted_notes(notes, vault, excludes)
     per_file, buckets = _collect_safe(wanted, *index_notes(notes))
     safe = sum(len(v) for v in per_file.values())
     print(f"\nWanted links: {sum(buckets.values())}")
@@ -156,61 +197,111 @@ def dry_run(vault):
 
 def apply_batch(vault):
     print("\nBatch heal: one pass, all unambiguous fixes, single recount.\n")
-    notes = load_vault(vault)
-    wanted = check_wanted_notes(notes, vault)
+    excludes = load_vault_config(vault)
+    notes = load_vault(vault, excludes)
+    wanted = check_wanted_notes(notes, vault, excludes)
     before = len(wanted)
     per_file, buckets = _collect_safe(wanted, *index_notes(notes))
 
-    applied = files_touched = 0
+    applied = files_touched = skipped = 0
     for rel, fixes in per_file.items():
         path = vault / rel
-        text = path.read_text(encoding="utf-8", errors="replace")
+        text = read_exact(path)
+        if text is None:
+            print(f"  SKIPPED (not valid UTF-8, left untouched): {rel}")
+            skipped += 1
+            continue
         changed = 0
         for link, new_stem in fixes:
             text, n = _rewrite(text, link, new_stem)
             changed += n
         if changed:
-            path.write_text(text, encoding="utf-8")
+            write_exact(path, text)
             applied += changed
             files_touched += 1
 
-    after = len(check_wanted_notes(load_vault(vault), vault))
+    _ex = load_vault_config(vault)
+    after = len(check_wanted_notes(load_vault(vault, _ex), vault, _ex))
     print(f"  wanted links before:        {before}")
     print(f"  safe auto-fixes applied:    {applied} (across {files_touched} files)")
+    if skipped:
+        print(f"  skipped non-UTF-8 files:    {skipped}")
     print(f"  left for AI triage:         {buckets['ask_claude']}")
     print(f"  no match at all:            {buckets['no_target']}")
     print(f"  wanted links after:         {after}\n")
 
 
-def find_next_safe_fix(per_file):
+def find_next_safe_fix(per_file, skip_rels=frozenset()):
     for rel, fixes in per_file.items():
+        if rel in skip_rels:
+            continue
         if fixes:
             link, new_stem = fixes[0]
             return rel, link, new_stem
     return None
 
 
+def _reparse_one(notes, vault, rel, excludes):
+    """Replace one note's entry from disk, leaving the rest of the scan intact.
+
+    load_vault builds the same per-note dict for every file; running it again to
+    learn about a single rewritten file is the expensive part of the loop.
+    """
+    fresh = load_vault(vault, excludes, only=rel)
+    if rel in fresh:
+        notes[rel] = fresh[rel]
+    else:
+        # The rewrite made the note unreadable or it vanished; drop it rather
+        # than leaving a stale entry that would mask the change.
+        notes.pop(rel, None)
+    return notes
+
+
 def apply_loop(vault, max_fixes):
     print(f"\nStarting the loop. Bounded to {max_fixes} safe fixes. Watch the count.\n")
     fixed = 0
+    skip_rels = set()
+    # Scan ONCE. The loop previously called load_vault + check_wanted_notes at
+    # the top of every iteration AND again after each write - two full scans per
+    # fix. Measured on a ~2,900-note vault: load_vault 1.94s, check_wanted_notes
+    # 0.78s, so ~5.4s per fix, roughly 80s to land 15 one-line edits. Only one
+    # file changes per iteration, so the rest of the scan is re-derived for
+    # nothing. apply_batch and dry_run already do this correctly with one pass.
+    excludes = load_vault_config(vault)
+    notes = load_vault(vault, excludes)
     while fixed < max_fixes:
-        notes = load_vault(vault)
-        wanted = check_wanted_notes(notes, vault)
+        wanted = check_wanted_notes(notes, vault, excludes)
         before = len(wanted)
         per_file, _ = _collect_safe(wanted, *index_notes(notes))
 
-        nxt = find_next_safe_fix(per_file)
+        nxt = find_next_safe_fix(per_file, skip_rels)
         if nxt is None:
             print("  no more safe fixes left. stopping.")
             break
 
         rel, link, new_stem = nxt
         path = vault / rel
-        text = path.read_text(encoding="utf-8", errors="replace")
-        text, _ = _rewrite(text, link, new_stem)
-        path.write_text(text, encoding="utf-8")
+        text = read_exact(path)
+        if text is None:
+            print(f"  SKIPPED (not valid UTF-8, left untouched): {rel}")
+            skip_rels.add(rel)
+            continue
+        text, n = _rewrite(text, link, new_stem)
+        if n == 0:
+            # vault_health's LINK_RE strips #anchors and |aliases, so a link
+            # reported as [[X]] can be [[X#Setup]] on disk and the exact-string
+            # rewrite matches nothing. Writing anyway produced identical bytes,
+            # counted a fix that never happened, then tripped the no-progress
+            # guard and abandoned every remaining safe fix in the run.
+            print(f"  SKIPPED (no literal [[{link}]] outside code in {rel})")
+            skip_rels.add(rel)
+            continue
+        write_exact(path, text)
 
-        after = len(check_wanted_notes(load_vault(vault), vault))
+        # Re-parse only the file that changed and patch it into the in-memory
+        # scan, instead of re-reading the whole vault to learn one note's links.
+        notes = _reparse_one(notes, vault, rel, excludes)
+        after = len(check_wanted_notes(notes, vault, excludes))
         fixed += 1
         print(f"  fix {fixed:>2}: [[{link}]]")
         print(f"           -> [[{new_stem}|{link}]]   in {rel}")

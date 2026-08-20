@@ -2,13 +2,16 @@
 description: Condense a long note or source into key claims, each tagged with provenance back to the exact source block it came from
 category: thinking
 triggers_en: ["distill this", "condense this note", "summarize with sources", "distill this source", "boil this down with provenance"]
+triggers_es: ["destila esto", "condensa esta nota", "resúmelo con fuentes", "destila esta fuente", "resume esto sin perder el contexto", "sácame lo importante de esto con las fuentes"]
+triggers_pt: ["destile isto", "condense esta nota", "resuma com fontes", "destile esta fonte", "reduza isto com proveniência"]
+triggers_zh: ["提炼这篇笔记", "把这个内容压缩成关键结论", "总结这份材料并标明出处", "精简内容但保留来源", "从这个来源提炼要点"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-distill $ARGUMENTS`:
 
 The optional argument is a note path, a `[[wikilink]]`, a folder, or a source URL/file. If none is given, ask what to distill (offer the longest recently-touched notes in `raw/` and the research folders as candidates).
 
-A distillation is not a summary. A summary throws the source away; a distillation keeps a verifiable trail, so a teammate (or a future Claude) can check every claim against the exact place it came from. This is the trust primitive: condensed but never unmoored from evidence.
+A distillation is not a summary. A summary throws the source away; a distillation keeps a verifiable trail, so a teammate (or a future agent) can check every claim against the exact place it came from. This is the trust primitive: condensed but never unmoored from evidence.
 
 1. Read `_CLAUDE.md` first if it exists in the vault root. Resolve the destination folder per `references/folder-map.md` (a distillation is a concept/reference note: wiki-style `wiki/concepts/`, Obsidian-style `Knowledge/`).
 
@@ -26,8 +29,8 @@ A distillation is not a summary. A summary throws the source away; a distillatio
 
 6. Keep inference separate from evidence. If the distillation surfaces a conclusion the source implies but never states, put it under a clearly labelled `## Inferences (not in the source)` section, each marked `confidence: speculation`, so distilled fact and your reasoning never blur.
 
-7. Write the distillation note. Path: `<resolved-folder>/Distill - <source-title> (YYYY-MM-DD).md`. It MUST follow `references/ai-first-rules.md`. Frontmatter includes `type: distillation`, `ai-first: true`, `source` (the verbatim path/URL of what was distilled), `source-blocks` (the count), `date`, `tags: [distillation, thinking]`. Body order:
-   - `## For future Claude` - 2-3 sentences: what was distilled, why, and that every claim carries a `(src: Bn)` pointer back to the numbered source blocks at the bottom for verification.
+7. Write the distillation note. Path: `<resolved-folder>/Distill - <source-title> (YYYY-MM-DD).md`. It MUST follow `references/ai-first-rules.md`. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. Frontmatter includes `type: distillation`, `ai-first: true`, `source` (the verbatim path/URL of what was distilled), `source-blocks` (the count), `date`, `tags: [distillation, thinking]`, `related-people` and `related-projects` (wikilinks, per the `type: distillation` schema). Body order:
+   - `## For future agent` - 2-3 sentences: what was distilled, why, and that every claim carries a `(src: Bn)` pointer back to the numbered source blocks at the bottom for verification.
    - `## Distilled claims` - the grouped claims with inline provenance tags.
    - `## Inferences (not in the source)` - only if step 6 produced any.
    - `## Source blocks` - the numbered list (`B1`, `B2`, ...) with each block's locator (heading/paragraph/timestamp) and a short quote or first line, so the anchors are resolvable from inside the vault. This is the recency/verification anchor.
@@ -40,6 +43,6 @@ Distillation is what makes a vault trustworthy to more than one person: condense
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Every distilled claim must trace to a real source block - never invent a claim, a block, or a locator, and never attach a `(src: Bn)` tag to a block that does not support it. Read the source exhaustively rather than sampling; a confident distillation built on a partial read is the failure mode this command exists to prevent. Mark inferences as `speculation` and keep them out of the distilled-claims section. See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

@@ -76,7 +76,7 @@ def _free_sources(academic: bool):
     from .lib.sources.reddit import RedditSource
     from .lib.sources.wikipedia import WikipediaSource
 
-    return [
+    sources = [
         DuckDuckGoSource(),
         WikipediaSource(),
         HackerNewsSource(),
@@ -84,6 +84,20 @@ def _free_sources(academic: bool):
         ArxivSource(),
         SemanticScholarSource(),
     ]
+
+    # Optional keyed extras join the pool when their key is set. The shared
+    # .env is already loaded by main() via source_config (the #125 lesson:
+    # never read a key before load_dotenv has run).
+    if os.environ.get("TAVILY_API_KEY", "").strip():
+        from .lib.sources.tavily import TavilySource
+
+        sources.append(TavilySource())
+    if os.environ.get("BRAVE_API_KEY", "").strip():
+        from .lib.sources.brave import BraveSource
+
+        sources.append(BraveSource())
+
+    return sources
 
 
 def run_free(topic: str, academic: bool) -> int:
@@ -142,7 +156,7 @@ def run_paid(topic: str) -> int:
 
     now = datetime.now()
     preamble = (
-        f"For future Claude: This note is a Perplexity Sonar deep dossier on \"{topic}\" "
+        f"For future agent: This note is a Perplexity Sonar deep dossier on \"{topic}\" "
         f"performed on {now.strftime('%Y-%m-%d %H:%M')}. It captures key facts with recency markers, "
         f"timeline, key players, contrarian views, and open questions. "
         f"Every claim was sourced at the time of research - verify recency markers before relying on individual facts."
@@ -170,7 +184,7 @@ def run_paid(topic: str) -> int:
     if sources_list:
         sources_md = "\n## Sources\n\n" + "\n".join(f"- {s}" for s in sources_list) + "\n"
     note_body = (
-        f"## For future Claude\n\n{preamble}\n\n"
+        f"## For future agent\n\n{preamble}\n\n"
         f"## Topic\n\n{topic}\n\n"
         f"## Dossier\n\n{body}\n"
         f"{sources_md}"
@@ -189,6 +203,11 @@ def main(argv: list[str]) -> int:
     if not topic:
         print("Usage: /research <topic> [--free] [--academic]", file=sys.stderr)
         return 2
+
+    # Load the shared ~/.config/obsidian-second-brain/.env before deciding
+    # free vs paid. source_config does this without requiring vault config
+    # (unlike lib.config), so zero-config free mode keeps working.
+    from .lib import source_config  # noqa: F401
 
     use_free = force_free or not os.environ.get("PERPLEXITY_API_KEY", "").strip()
     if use_free:

@@ -55,9 +55,26 @@ def _iter_files(root: Path):
         yield p
 
 
+_FILE_CACHE: dict[str, list] = {}
+
+
+def _all_files(root: Path) -> list:
+    """One walk per root, reused.
+
+    detect_languages did a full rglob for the language histogram, then
+    propose_modules did another rglob per top-level directory - in aggregate a
+    second near-complete walk of the same tree just to count source files by
+    directory. Both now read this.
+    """
+    key = str(root.resolve())
+    if key not in _FILE_CACHE:
+        _FILE_CACHE[key] = list(_iter_files(root))
+    return _FILE_CACHE[key]
+
+
 def detect_languages(root: Path) -> list[dict]:
     counts: Counter = Counter()
-    for p in _iter_files(root):
+    for p in _all_files(root):
         lang = LANG.get(p.suffix.lower())
         if lang:
             counts[lang] += 1
@@ -131,8 +148,10 @@ def propose_modules(root: Path, max_modules: int) -> list[dict]:
             name = child.name
             if name in SKIP_DIRS or name.startswith("."):
                 continue
+            # Filter the single cached walk instead of re-walking this subtree.
             n_source = sum(
-                1 for p in _iter_files(child) if p.suffix.lower() in SOURCE_EXTS
+                1 for p in _all_files(root)
+                if p.suffix.lower() in SOURCE_EXTS and child in p.parents
             )
             if n_source == 0:
                 continue

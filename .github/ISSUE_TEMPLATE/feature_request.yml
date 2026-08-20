@@ -58,7 +58,7 @@ body:
       description: Could `/obsidian-recap` or `/obsidian-review` already do this with different prompts? What would make this distinct?
       placeholder: |
         /obsidian-recap is conversational. /obsidian-review is structured. This would
-        focus narrowly on shipped work — the kind of thing you'd post about.
+        focus narrowly on shipped work - the kind of thing you'd post about.
 
   - type: dropdown
     id: ai-first
@@ -66,7 +66,7 @@ body:
       label: How does this interact with the AI-first vault rule?
       description: Every new command must produce notes following references/ai-first-rules.md.
       options:
-        - Produces vault notes — will follow ai-first-rules.md
+        - Produces vault notes - will follow ai-first-rules.md
         - Reads vault only, produces no notes
         - Doesn't touch vault (e.g., install.sh improvement)
         - Not sure

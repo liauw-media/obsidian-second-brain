@@ -25,6 +25,20 @@ HERMES_SKILLS_DIR="skills"
 HERMES_AUTHOR="Eugeniu Ghelbur"
 HERMES_LICENSE="MIT"
 
+# Where INSTALL.md below tells the user to copy the tree, and therefore the only
+# path a `uv run --directory` can name. It has to be a concrete path rather than
+# `.`: this adapter's own install doc says "point Hermes at your vault as the
+# working directory", and a cron blueprint is armed with `--workdir <vault>`, so
+# the CWD at run time is the vault, never the skill root. `--directory "."` from
+# there resolves to the vault (no pyproject.toml, no scripts/) and every
+# Python-backed skill dies on `No such file or directory` (#191).
+#
+# `$HOME` rather than `~` on purpose, and single-quoted so it reaches the built
+# markdown unexpanded: commands write the placeholder inside double quotes
+# (`--directory "SKILL_ROOT"`), and a tilde does not expand there, so `~/...`
+# would hand uv a literal directory named `~`.
+HERMES_INSTALL_ROOT='$HOME/.hermes/skills/obsidian-second-brain'
+
 adapter_build() {
   local src="$1" dst="$2"
 
@@ -39,13 +53,13 @@ adapter_build() {
 }
 
 # Copy the Hermes lifecycle-hook artifacts (the on_session_end maintenance script
-# and its cli-config.yaml template) into the build.
+# and its ~/.hermes/config.yaml hooks-block template) into the build.
 _hermes_copy_hooks() {
   local src="$1" dst="$2"
   [[ -d "$src" ]] || return 0
   mkdir -p "$dst"
   [[ -f "$src/obsidian-hermes-session-end.sh" ]] && cp "$src/obsidian-hermes-session-end.sh" "$dst/"
-  [[ -f "$src/hermes-hooks.cli-config.example.yaml" ]] && cp "$src/hermes-hooks.cli-config.example.yaml" "$dst/"
+  [[ -f "$src/hermes-hooks.config.example.yaml" ]] && cp "$src/hermes-hooks.config.example.yaml" "$dst/"
 }
 
 # Read the project version from pyproject.toml so SKILL.md `version:` tracks
@@ -79,9 +93,15 @@ _hermes_emit_skills() {
 
     trig_clean=""
     if [[ -n "$triggers" ]]; then
-      trig_clean="$(echo "$triggers" | tr -d '[]"' | sed 's/,/, /g; s/  */ /g; s/^ *//; s/ *$//')"
+      trig_clean="$(format_triggers "$triggers")"
       [[ -n "$trig_clean" ]] && desc="$desc Triggers: $trig_clean."
     fi
+
+    # This build writes its own frontmatter, so a source trigger-mode does not
+    # travel unless it is encoded here (#181).
+    local trigmode
+    trigmode="$(parse_frontmatter "$f" trigger-mode)"
+    desc="$(with_trigger_policy "$desc" "$trigmode")"
 
     mkdir -p "$dst/$category/$name"
     out="$dst/$category/$name/SKILL.md"
@@ -109,17 +129,21 @@ _hermes_emit_skills() {
     } > "$out"
 
     rewrite_tool_neutral "$out"
-    rewrite_platform_paths "$out" "$HERMES_DIR"
+    rewrite_skill_root "$out" "$HERMES_INSTALL_ROOT"
+    rewrite_platform_paths "$out" ""
   done
 }
 
 # Emit the four scheduled agents (SKILL.md "Scheduled Agents" section) as native
 # Hermes blueprint skills - `metadata.hermes.blueprint` with a cron `schedule`.
-# They go under optional-skills/ (NOT skills/) on purpose: a blueprint arms as
-# soon as its skill is loaded, and the scheduled agents are opt-in by design
-# (the Claude side ships inert and requires explicit /schedule). optional-skills
-# require an explicit `hermes skills install <name>`, which preserves that
-# opt-in arming contract. SKILL.md remains the canonical source for the prompts.
+# A blueprint never schedules anything silently (Hermes's own contract): a
+# registry `hermes skills install` registers it as a *suggested* cron job the
+# user accepts via /suggestions, and a manually copied skill is armed
+# explicitly with `hermes cron create ... --skill <name>`. They go under
+# optional-skills/ (NOT skills/) so INSTALL.md's bulk skills/ copy never ships
+# them implicitly - the scheduled agents are opt-in by design (the Claude side
+# ships inert and requires explicit /schedule). SKILL.md remains the canonical
+# source for the prompts. (#134)
 _hermes_emit_blueprints() {
   local dst="$1"
   mkdir -p "$dst"
@@ -140,13 +164,20 @@ Phase 1 - Close the day:
 - Move any completed kanban tasks to Done.
 
 Phase 2 - Reconcile:
-- Scan \`wiki/entities/\` for outdated roles, companies, or descriptions that conflict with newer daily notes.
-- Scan \`wiki/concepts/\` for claims contradicted by recently ingested sources.
-- Auto-resolve clear winners. Flag ambiguous ones in \`wiki/decisions/\`.
+- First resolve the entities, concepts, and decisions folders per \`references/folder-map.md\` (at the install root,
+  \`$HERMES_INSTALL_ROOT/references/folder-map.md\`): the vault's \`_CLAUDE.md\` Folder Map wins, else wiki-style
+  \`wiki/entities/\` + \`wiki/concepts/\` + \`wiki/decisions/\`, else Obsidian-style \`People/\` + \`Knowledge/\` (and \`Ideas/\`) + \`Knowledge/\`.
+  A resolved folder that does not exist is a skip, not an error. Never scan a hardcoded \`wiki/\` path on a vault with no \`wiki/\` folder -
+  unattended, that is three tool failures a night with nothing to show for them.
+- Scan the entities folder for outdated roles, companies, or descriptions that conflict with newer daily notes.
+- Scan the concepts folder for claims contradicted by recently ingested sources.
+- Flag EVERY contradiction as a \`type: conflict\` note with \`status: open\` in the decisions folder. Do NOT rewrite any existing page -
+  resolving a contradiction rewrites the outdated note, which is destructive and irreversible while the user sleeps. Leave that to an
+  interactive obsidian-reconcile run.
 
 Phase 3 - Synthesize:
 - Scan sources ingested today and yesterday. Find concepts that appear in 2+ unrelated sources.
-- If patterns found: create \`wiki/concepts/Synthesis - Title.md\` with evidence and interpretation.
+- If patterns found: create \`Synthesis - Title.md\` in the concepts folder resolved in Phase 2, with evidence and interpretation.
 
 Phase 4 - Heal:
 - Find notes created today with no incoming links. Add links from relevant existing pages.
@@ -154,7 +185,8 @@ Phase 4 - Heal:
 - Rebuild \`index.md\` to reflect today's changes.
 
 Phase 5 - Log:
-- Append to \`log.md\`: ## [YYYY-MM-DD] nightly | End of day + X reconciled, Y synthesized, Z orphans linked
+- Append an operation-log entry: if \`Logs/\` exists write \`**HH:MM** - nightly | End of day + X flagged, Y synthesized, Z orphans linked\`
+  to \`Logs/YYYY-MM-DD.md\`; otherwise append \`## [YYYY-MM-DD] nightly | ...\` to \`log.md\`.
 
 Do not ask questions. Do not fix anything destructive - only add, update, link. Save and stop."
 
@@ -168,8 +200,11 @@ Do not ask questions. Save and stop."
 
   _hermes_write_blueprint "$dst" obsidian-health-check "0 21 * * 0" "every Sunday at 9:00 PM" \
 "Run the vault health check and log a report (report only, never auto-fixes)." \
-"Read \`_CLAUDE.md\`. Run: \`uv run -m scripts.vault_health --path <vault> --json\`
-Parse the output. Write a health report to \`Knowledge/Vault Health YYYY-MM-DD.md\`
+"Read \`_CLAUDE.md\`. Run: \`uv run --directory $HERMES_INSTALL_ROOT scripts/vault_health.py --path <vault> --json\`
+(the \`--directory\` is load-bearing: a cron job is armed with \`--workdir <vault>\`, so the working directory is the vault and a bare
+\`uv run -m scripts.vault_health\` cannot see \`scripts/\` at all. Substitute the real install root if the tree lives elsewhere.)
+Parse the output. Write the health report to the concepts folder resolved per \`references/folder-map.md\`
+(wiki-style \`wiki/concepts/\`, Obsidian-style \`Knowledge/\`) as \`Vault Health YYYY-MM-DD.md\`,
 summarizing findings by severity (critical, warning, info).
 Do not fix anything autonomously - only report.
 Do not ask questions. Save and stop."
@@ -198,7 +233,7 @@ _hermes_write_blueprint() {
     echo
     echo "## When to use"
     echo
-    echo "Runs automatically on its blueprint schedule ($human). Can also be run on demand. Opt-in: install with \`hermes skills install $name\` to arm the schedule."
+    echo "Runs on its blueprint schedule ($human) once armed. Can also be run on demand. Opt-in: arming is explicit - Hermes blueprints never schedule silently. Arm with \`hermes cron create \"$schedule\" \"Run the $name scheduled vault maintenance. Follow the skill procedure exactly; do not ask questions; save and stop.\" --skill $name --workdir <vault>\`, or accept the suggested job from \`/suggestions\` after a registry \`hermes skills install\`."
     echo
     echo "## Procedure"
     echo
@@ -206,10 +241,10 @@ _hermes_write_blueprint() {
   } > "$dst/$name/SKILL.md"
 }
 
-# Box 4 - the lifecycle-hook story, told honestly. Hermes's session-lifecycle
-# hook config is not documented as of this build, so we ship guidance rather
-# than a config that might not load. The nightly blueprint is the cron-native
-# substitute for the Claude PostCompact maintenance pass.
+# Box 4 - the lifecycle-hook story. Shell hooks are declared under `hooks:` in
+# ~/.hermes/config.yaml and fire on plugin events like on_session_end; the
+# nightly cron job is the cron-native substitute for the Claude PostCompact
+# maintenance pass.
 _hermes_emit_hooks_doc() {
   local dst="$1"
   cat > "$dst/HOOKS.md" <<'EOF'
@@ -232,16 +267,26 @@ The four scheduled agents are emitted as native Hermes blueprint skills under
 | `obsidian-weekly` | `0 18 * * 5` | Generate the weekly review note |
 | `obsidian-health-check` | `0 21 * * 0` | Vault health report (report only) |
 
-They live in `optional-skills/` (not `skills/`) on purpose: a Hermes blueprint
-arms as soon as its skill is loaded, and these are opt-in by design. Arm one
-with `hermes skills install <name>`; it then runs unattended on its schedule.
+They live in `optional-skills/` (not `skills/`) on purpose: the scheduled
+agents are opt-in by design, so INSTALL.md's bulk `skills/` copy never ships
+them implicitly. Installing a skill does not schedule anything - a Hermes
+blueprint never arms silently. Copy them into `~/.hermes/skills/` like any
+other skill (see INSTALL.md), then arm each schedule explicitly:
+
+```bash
+hermes cron create "0 22 * * *" "Run the obsidian-nightly scheduled vault maintenance. Follow the skill procedure exactly; do not ask questions; save and stop." --skill obsidian-nightly --name obsidian-nightly --workdir /path/to/vault
+```
+
+(A registry `hermes skills install` instead registers the blueprint as a
+suggested cron job you accept from `/suggestions`.) Verify with
+`hermes cron list`; run outputs land in `~/.hermes/cron/output/<job_id>/`.
 None of them delete or archive - they only add, update, link.
 
 ## PostCompact analog (lifecycle hook) - shipped
 
 The Claude PostCompact hook fires on context compaction to propagate the session
-into the vault. Hermes's analog is the `on_session_end` event hook (declared in
-`cli-config.yaml`). This build ships it:
+into the vault. Hermes's analog is the `on_session_end` event hook (declared
+under the `hooks:` block of `~/.hermes/config.yaml`). This build ships it:
 
 - **`hooks/obsidian-hermes-session-end.sh`** - an `on_session_end` hook that, on
   a completed (non-interrupted) session, runs the `obsidian-nightly`
@@ -249,8 +294,8 @@ into the vault. Hermes's analog is the `on_session_end` event hook (declared in
   Claude bg-agent's trust model exactly: OPT-IN, ships INERT, no-ops unless BOTH
   `OBSIDIAN_VAULT_PATH` and `OBSIDIAN_HERMES_HOOK_ENABLED=1` are set; add/update
   /link only, never delete or archive.
-- **`hooks/hermes-hooks.cli-config.example.yaml`** - the paste-in
-  `cli-config.yaml` block registering the hook.
+- **`hooks/hermes-hooks.config.example.yaml`** - the paste-in
+  `hooks:` block for `~/.hermes/config.yaml` registering the hook.
 
 Install:
 
@@ -258,37 +303,21 @@ Install:
 mkdir -p ~/.hermes/agent-hooks
 cp hooks/obsidian-hermes-session-end.sh ~/.hermes/agent-hooks/
 chmod +x ~/.hermes/agent-hooks/obsidian-hermes-session-end.sh
-# merge hooks/hermes-hooks.cli-config.example.yaml into your cli-config.yaml,
+# merge hooks/hermes-hooks.config.example.yaml into your ~/.hermes/config.yaml,
 # then: export OBSIDIAN_VAULT_PATH=... OBSIDIAN_HERMES_HOOK_ENABLED=1
 ```
 
-**The one unverified seam:** how to invoke Hermes headlessly for the
-consolidation run. The script defaults to `hermes run --quiet` and lets you
-override it with `OBSIDIAN_HERMES_CONSOLIDATE_CMD` if your Hermes version uses a
-different non-interactive entrypoint. The hook wiring, payload parsing, trust
-gate, and stdout contract are all built to the documented `on_session_end` spec;
-confirming the headless invocation on a live Hermes is the remaining check
-(Issue #79). The `obsidian-nightly` cron blueprint covers the same maintenance
-on a daily cadence regardless.
+The consolidation runs headlessly via `hermes -z` (one-shot mode: prompt passed
+as the argument, only the final response printed). Override the command with
+`OBSIDIAN_HERMES_CONSOLIDATE_CMD` if your build differs; the script appends the
+prompt as the command's final argument. The `obsidian-nightly` cron job covers
+the same maintenance on a daily cadence regardless.
 EOF
 }
 
-_hermes_copy_references() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-  find "$dst" -type f -name '*.md' -print0 | while IFS= read -r -d '' f; do
-    rewrite_platform_paths "$f" "$HERMES_DIR"
-  done
-}
+_hermes_copy_references() { copy_references_rewritten "$1" "$2" ""; }  # see adapters/lib.sh
 
-_hermes_copy_scripts() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-}
+_hermes_copy_scripts() { copy_scripts_with_project "$1" "$2"; }  # see adapters/lib.sh
 
 _hermes_emit_install_hint() {
   local dst="$1"
@@ -321,26 +350,45 @@ Then in Hermes:
   the task and let Hermes select a skill from its description.
 - Skills run in your Hermes session. The AI-first vault rule lives in
   `references/ai-first-rules.md` - it is non-negotiable for every note a skill
-  writes (`## For future Claude` preamble, rich frontmatter, `[[wikilinks]]`,
-  recency markers, sources verbatim, confidence levels).
-- Python helpers under `scripts/` run via `uv run -m scripts.research.<name>`
-  from the vault root.
+  writes (`## For future agent` preamble, rich frontmatter, `[[wikilinks]]`,
+  recency markers, sources verbatim, confidence levels). That path is relative
+  to the install root, which is load-bearing: start Hermes elsewhere and it does
+  not resolve. A skill that cannot read it must search upward for it, and say so
+  before writing if it still cannot - the requirements in parentheses are the
+  floor either way.
+- Python helpers under `scripts/` run via
+  `uv run --directory ~/.hermes/skills/obsidian-second-brain -m scripts.research.<name>`.
+  The install root ships a `pyproject.toml`, so modules and dependencies both
+  resolve there. Name it explicitly rather than relying on the working
+  directory: Hermes is pointed at your *vault* as the working directory (and a
+  cron job is armed with `--workdir <vault>`), so a bare `uv run -m scripts.X`
+  looks for `scripts/` inside the vault and fails with `No module named
+  'scripts'`.
 
 ## Scheduled agents (opt-in)
 
 The four scheduled maintenance agents are emitted as native Hermes blueprint
 skills under `optional-skills/` (morning / nightly / weekly / health-check).
-They are NOT auto-armed - install one explicitly to arm its schedule:
+They are NOT auto-armed - a Hermes blueprint never schedules anything silently.
+Install them like any other skill, then arm each schedule explicitly:
 
 ```bash
-cp -R dist/hermes/optional-skills/. ~/.hermes/optional-skills/
-hermes skills install obsidian-nightly   # arms the 10pm consolidation pass
+# skills land in ~/.hermes/skills/ (Hermes discovers <category>/<name>/SKILL.md)
+cp -R dist/hermes/optional-skills/. ~/.hermes/skills/obsidian-second-brain/
+# arm the 10pm consolidation pass (repeat per agent - schedules in HOOKS.md)
+hermes cron create "0 22 * * *" "Run the obsidian-nightly scheduled vault maintenance. Follow the skill procedure exactly; do not ask questions; save and stop." --skill obsidian-nightly --name obsidian-nightly --workdir /path/to/vault
 ```
+
+Verify with `hermes cron list`. (When installed from a registry or URL via
+`hermes skills install`, the blueprint is instead registered as a suggested
+cron job you accept from `/suggestions` - a local built tree has no
+installable identifier, so the cp + `hermes cron create` route above is the
+default.)
 
 See `HOOKS.md` for the full schedule table and the PostCompact-analog story.
 
 Point Hermes at your vault as the working directory, or pair these skills with
 the MCP connector (`integrations/obsidian-mcp-server/`) for bounded vault data
-access. Remaining lifecycle-hook wiring is tracked in Issue #79.
+access.
 EOF
 }

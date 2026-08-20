@@ -13,7 +13,7 @@ ai-first: true
 
 # Alex Rivera
 
-## For future Claude
+## For future agent
 
 Alex Rivera is the owner of this vault. Founder and sole owner of the fictional company Currentscale Labs, building [[Projects/Tide]]. Relationship strength: strong (this is the vault owner). Last interaction: 2026-04-27. The Recent Interactions section below logs vault activity rather than conversations, since Alex is talking to themselves through Claude.
 
@@ -35,7 +35,7 @@ Alex Rivera is the owner of this vault. Founder and sole owner of the fictional 
 - **2026-04-27** - Paired with [[people/Sam Patel]] on streak invalidation, captured idea about streak insurance, logged work in [[wiki/logs/2026-04-27 - Tide retention rebuild]]
 - **2026-04-26** - Released Tide v0.8.4, fixed a webhook race condition (TBD: link the devlog when written)
 
-## Notes for future Claude
+## Notes for future agent
 
 - Alex prefers terse outputs and dislikes em-dashes in prose
 - Working hours: 09:00-18:00 WET, hard stop weekends

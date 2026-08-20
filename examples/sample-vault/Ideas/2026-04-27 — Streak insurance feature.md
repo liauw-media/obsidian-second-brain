@@ -9,7 +9,7 @@ ai-first: true
 
 # Streak insurance feature
 
-## For future Claude
+## For future agent
 
 Idea captured on 2026-04-27 about a "streak insurance" feature for [[Projects/Tide]]. Status: captured. The body explains the idea, why it's interesting, and what would make it real. If shelved later, the reason will be documented at the bottom. Owner: [[people/Alex Rivera]].
 

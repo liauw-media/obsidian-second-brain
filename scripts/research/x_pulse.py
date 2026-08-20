@@ -5,15 +5,14 @@ Output: hot themes (with rep posts + voices), gaps, hooks working, voice/tone, p
 Default behavior: print to chat AND save AI-first note to Research/X-pulse/.
 """
 
-import json
 import sys
 from datetime import datetime
-from pathlib import Path
+
 from .lib import grok, vault
 
 PROMPT_TEMPLATE = """You are a social-media-aware analyst with live access to X. Topic: "{topic}"
 
-Use Live Search on X to scan posts from the last 24-72 hours about this topic. Return EXACTLY this structure (markdown), nothing else:
+Use the x_search tool to scan X posts from the last 24-72 hours about this topic. Return EXACTLY this structure (markdown), nothing else:
 
 WHAT'S HOT (last 24-72h)
 [3-5 emerging themes. For each theme:]
@@ -41,7 +40,7 @@ POST IDEAS FOR YOU TODAY
 Rules:
 - Do NOT add commentary outside this structure.
 - All URLs must be real x.com or twitter.com links you actually fetched (no fabrications).
-- If Live Search returns no current data on this topic, write "No active discourse found in last 72h on this topic." and stop.
+- If x_search returns no current data on this topic, write "No active discourse found in last 72h on this topic." and stop.
 """
 
 
@@ -52,11 +51,12 @@ def main(argv: list[str]) -> int:
 
     topic = " ".join(argv[1:]).strip()
     prompt = PROMPT_TEMPLATE.format(topic=topic)
-    print(f"[/x-pulse] Scanning X for '{topic}' via Grok + Live Search...\n", file=sys.stderr)
+    print(f"[/x-pulse] Scanning X for '{topic}' via Grok x_search...\n", file=sys.stderr)
 
     try:
         # /x-pulse synthesizes across many posts → uses the reasoning model.
-        # /x-read just extracts one post → grok-4 (default) is enough.
+        # (grok-4.20-reasoning is an alias; it resolves to grok-4.20-0309-reasoning.)
+        # /x-read just extracts one post → the grok-4.5 default handles it.
         result = grok.call(
             prompt,
             command="x-pulse",
@@ -76,9 +76,9 @@ def main(argv: list[str]) -> int:
     # AI-first note save
     now = datetime.now()
     preamble = (
-        f"For future Claude: This note is a Grok Live Search scan of X discourse "
+        f"For future agent: This note is a Grok x_search scan of X discourse "
         f"about \"{topic}\" performed on {now.strftime('%Y-%m-%d %H:%M')}. It captures "
-        f"emerging themes, gaps, hook formats, and content angles for Eugeniu's posting strategy. "
+        f"emerging themes, gaps, hook formats, and content angles for the user's posting strategy. "
         f"X posts are time-sensitive - claims here may be stale within days."
     )
     fm = {
@@ -91,7 +91,7 @@ def main(argv: list[str]) -> int:
         "cost-usd": round(result["cost_usd"], 4),
         "ai-first": True,
     }
-    note_body = f"## For future Claude\n\n{preamble}\n\n## Topic\n\n{topic}\n\n## Pulse\n\n{body}\n"
+    note_body = f"## For future agent\n\n{preamble}\n\n## Topic\n\n{topic}\n\n## Pulse\n\n{body}\n"
     path = vault.write_note("x-pulse", topic, fm, note_body)
     vault.print_save_links(path)
     vault.append_to_log(f"x-pulse on \"{topic}\" - saved to {path.name}")

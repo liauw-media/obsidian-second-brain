@@ -2,8 +2,9 @@
 # obsidian-hermes-session-end.sh - Hermes on_session_end vault-maintenance hook
 #
 # The Hermes-runtime analog of the Claude PostCompact hook (obsidian-bg-agent.sh).
-# Hermes fires `on_session_end` hooks declared in cli-config.yaml, piping a JSON
-# payload to stdin and reading JSON back from stdout. This hook runs the vault
+# Hermes fires `on_session_end` hooks declared under `hooks:` in
+# ~/.hermes/config.yaml, piping a JSON payload to stdin and reading JSON back
+# from stdout. This hook runs the vault
 # consolidation pass (the obsidian-nightly procedure) at the end of a completed
 # session, so the vault stays current without waiting for the nightly cron.
 #
@@ -15,19 +16,19 @@
 # /link only.
 #
 # Setup:
-#   1. Register this script as an on_session_end hook in cli-config.yaml
-#      (see hooks/hermes-hooks.cli-config.example.yaml).
+#   1. Register this script as an on_session_end hook in ~/.hermes/config.yaml
+#      (see hooks/hermes-hooks.config.example.yaml).
 #   2. Export OBSIDIAN_VAULT_PATH and OBSIDIAN_HERMES_HOOK_ENABLED=1.
 #   3. chmod +x this script.
 # To disable: clear OBSIDIAN_HERMES_HOOK_ENABLED (the gate below makes that enough).
 #
-# The one runtime-specific seam: how to invoke Hermes headlessly to run the
-# consolidation. It is configurable via OBSIDIAN_HERMES_CONSOLIDATE_CMD; the
-# default below is the documented best guess and may need adjusting to your
-# Hermes version (Issue #79 tracks confirming it on a live runtime).
+# The consolidation runs headlessly via `hermes -z` (one-shot mode: prompt as
+# the argument, only the final response printed). Override with
+# OBSIDIAN_HERMES_CONSOLIDATE_CMD if your build differs; the prompt is appended
+# as the command's final argument.
 #
 # Contract: always print `{}` to stdout (silent no-op for an observer hook).
-# Logs: /tmp/obsidian-hermes-session-end.log
+# Logs: $TMPDIR/obsidian-hermes-session-end-$(id -u).log, mode 0600
 
 emit_noop() { printf '{}\n'; }
 
@@ -55,14 +56,20 @@ patterns, heal orphan links, rebuild index.md, and append a line to log.md. \
 Add/update/link only - never delete, archive, or merge. Run silently, ask \
 nothing. Triggered by Hermes on_session_end for session $SESSION_ID."
 
-# Default headless invocation. Override OBSIDIAN_HERMES_CONSOLIDATE_CMD if your
-# Hermes build uses a different non-interactive entrypoint. The prompt is passed
-# on the command's stdin.
-CONSOLIDATE_CMD="${OBSIDIAN_HERMES_CONSOLIDATE_CMD:-hermes run --quiet}"
+# Default headless invocation: `hermes -z` one-shot mode. Override
+# OBSIDIAN_HERMES_CONSOLIDATE_CMD if your Hermes build uses a different
+# non-interactive entrypoint. The prompt is passed as the final argument.
+CONSOLIDATE_CMD="${OBSIDIAN_HERMES_CONSOLIDATE_CMD:-hermes -z}"
 
 (
   cd "$VAULT" 2>/dev/null && \
-  printf '%s' "$PROMPT" | $CONSOLIDATE_CMD >> /tmp/obsidian-hermes-session-end.log 2>&1
+  # Per-user log path. A fixed name in the shared /tmp is world-readable
+  # under a default umask and predictable, so on a multi-user host anyone
+  # can read the running commentary on this vault - and can pre-create the
+  # path as a symlink, since macOS does not enable protected_symlinks.
+  HERMES_LOG="${TMPDIR:-/tmp}/obsidian-hermes-session-end-$(id -u).log"
+  ( umask 077; : >> "$HERMES_LOG" ) 2>/dev/null || true
+  $CONSOLIDATE_CMD "$PROMPT" >> "$HERMES_LOG" 2>&1
 ) &
 
 emit_noop

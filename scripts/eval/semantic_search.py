@@ -18,10 +18,10 @@ Design choices that matter:
   the shipped default until the eval proves hybrid beats lexical.
 
 Requires Ollama (https://ollama.com) with an embedding model pulled:
-    ollama pull mxbai-embed-large
+    ollama pull bge-m3
 Configure via env: OLLAMA_URL (default http://localhost:11434),
-OBSIDIAN_EMBED_MODEL (default mxbai-embed-large),
-OBSIDIAN_EMBED_EXCLUDE (default empty; e.g. "wiki/private/,Faith,Masha").
+OBSIDIAN_EMBED_MODEL (default bge-m3, multilingual),
+OBSIDIAN_EMBED_EXCLUDE (default empty; e.g. "wiki/private/,Journal,Private").
 """
 
 from __future__ import annotations
@@ -33,12 +33,12 @@ import os
 import re
 import sys
 import time
-import urllib.request
 import urllib.error
+import urllib.request
 from pathlib import Path
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://localhost:11434").rstrip("/")
-EMBED_MODEL = os.environ.get("OBSIDIAN_EMBED_MODEL", "mxbai-embed-large")
+EMBED_MODEL = os.environ.get("OBSIDIAN_EMBED_MODEL", "bge-m3")
 # Backend selects how embeddings are produced:
 #   "ollama" (default) - local Ollama at OLLAMA_URL, fully private/offline.
 #   "openai" - ANY OpenAI-compatible /v1/embeddings endpoint, so users without
@@ -52,40 +52,30 @@ EMBED_KEY = os.environ.get("OBSIDIAN_EMBED_KEY", "")
 EXCLUDE_PREFIXES = tuple(
     p.strip() for p in os.environ.get("OBSIDIAN_EMBED_EXCLUDE", "").split(",") if p.strip()
 )
-SKIP_DIRS = {".obsidian", ".git", ".trash", "_trash", ".claude", "_export", "templates", "node_modules"}
-INDEX_FILE = ".obsidian-semantic-index.json"  # written at vault root
-# Embedding models have a token limit (mxbai-embed-large ~512 tokens). Long notes
-# must be split into safe chunks and averaged, or the model 500s. ~1200 chars sits
-# well under the limit; capping the chunk count bounds time on huge notes.
-# RAISED 1200 -> 4000 on 2026-07-30, together with the switch to bge-m3.
-# The old value was sized for nomic-embed-text's 2048-token window and left
-# 127 of 432 notes (29.4%) TRUNCATED - the GLI standards lost 94-97% of their
-# text, log.md 88%. Measured ceiling: an embedding must fit in ONE physical
-# batch, and ollama starts llama-server with `-ub 2048`, so the real limit is
-# ~2048 TOKENS per call, not bge-m3's 8192 context. 4000 chars measured at
-# 1746 tokens (~15% headroom); 8000 chars = 3492 tokens and returns HTTP 500
-# "input is too large to process. increase the physical batch size".
-# `options.num_batch=8192` does lift it, but the FIRST consumer to load the
-# model fixes -ub for everyone - a short query from the MCP server would then
-# break the builder's large chunks. Not worth that coupling.
-_CHUNK_CHARS = 4000
-# 4000 x 12 = 48,000 chars covered -> truncated notes drop 127 -> 11 (2.5%),
-# and total embed calls DROP 2484 -> 1204 because fewer, larger chunks mean
-# fewer round-trips. The 11 remaining are 100-338 KB reference documents whose
-# mean-pooled vector is near-meaningless anyway; those need chunk-LEVEL
-# retrieval (one vector per chunk), which is an architecture change, not a knob.
-_MAX_CHUNKS = 12
+# Single source of truth: the MCP server owns the skip set, so the semantic
+# index and the lexical scan can never drift into different universes
+# (stress-test fix 10/24).
+import sys as _sys
 
-# CHUNK-LEVEL RETRIEVAL (added 2026-07-30). A note longer than the threshold gets
-# an additional vector PER CHUNK, and its score becomes the best-matching chunk
-# instead of a mean-pooled centroid. Rationale: mean-pooling 85 chunks of a 338 KB
-# regulatory standard yields a vector that is close to nothing in particular, so
-# those documents were effectively unsearchable even once truncation was fixed.
-# Threshold measured against this vault: 20,000 chars -> 37 of 432 notes chunked,
-# 597 chunk vectors, +264 embed calls (~2 min), index ~8.8 -> ~21 MB.
-# Cap 200 > the 85 the largest note needs, so NOTHING is truncated any more.
-_CHUNK_THRESHOLD = 20_000
-_CHUNK_MAX_STORED = 200
+_sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "integrations" / "obsidian-mcp-server"))
+from vault_ops import _SKIP_DIRS as SKIP_DIRS  # noqa: E402
+
+INDEX_FILE = ".obsidian-semantic-index.json"  # written at vault root
+# Embedding models have a token limit. Long notes must be split into safe chunks,
+# or the model 500s; capping the chunk count bounds time on huge notes.
+#
+# FLEET-SPECIFIC (kept through the 2026-08-20 upstream merge - do not revert to the
+# upstream 1200/8): this vault embeds with **bge-m3**, whose physical batch is
+# `-ub 2048` TOKENS, several times upstream's ~512-token assumption. Upstream's
+# 8 x 1200 = 9,600-char ceiling was measured against this vault on 2026-08-20:
+# it would truncate 196 of 711 notes and leave **40.5% of all vault bytes never
+# embedded**, silently. 12 x 4000 = 48,000 truncates 14 notes / 16.0% of bytes.
+# Nothing errors either way - the index just quietly stops covering long notes,
+# so this constant is load-bearing. `_embed_adaptive` below halves any chunk that
+# still overflows, which makes the larger size safe rather than merely bigger.
+# TODO: 16% is still material; the 14 remaining notes argue for a higher cap.
+_CHUNK_CHARS = 4000
+_MAX_CHUNKS = 12
 
 
 # --------------------------------------------------------------------------- #
@@ -105,16 +95,16 @@ def ollama_available() -> bool:
 _RETRY_WAITS = (1, 3, 8, 15)  # a local model on a laptop can briefly 500 under rapid load
 
 
-def _embed_request(text: str) -> tuple[str, bytes, dict]:
+def _embed_request(text: str, model: str | None = None) -> tuple[str, bytes, dict]:
     """Build the (url, body, headers) for the configured backend."""
     if EMBED_BACKEND == "openai":
         headers = {"Content-Type": "application/json"}
         if EMBED_KEY:
             headers["Authorization"] = f"Bearer {EMBED_KEY}"
-        body = json.dumps({"model": EMBED_MODEL, "input": text[:_CHUNK_CHARS]}).encode()
+        body = json.dumps({"model": (model or EMBED_MODEL), "input": text[:_CHUNK_CHARS]}).encode()
         return f"{EMBED_URL}/v1/embeddings", body, headers
     # ollama (default): keep_alive holds the model in memory between calls
-    body = json.dumps({"model": EMBED_MODEL, "prompt": text[:_CHUNK_CHARS], "keep_alive": "15m"}).encode()
+    body = json.dumps({"model": (model or EMBED_MODEL), "prompt": text[:_CHUNK_CHARS], "keep_alive": "15m"}).encode()
     return f"{EMBED_URL}/api/embeddings", body, {"Content-Type": "application/json"}
 
 
@@ -128,16 +118,20 @@ def _parse_embedding(data: dict) -> list[float] | None:
     return None
 
 
-def embed(text: str) -> list[float]:
+def embed(text: str, retries: int | None = None, model: str | None = None) -> list[float]:
     """Return the embedding vector for one text via the configured backend.
 
     Retries transient errors (HTTP 5xx, connection resets): a local model on a
     laptop can buckle under rapid sequential calls, then recover a second later.
-    The last failure is raised so the caller can skip the note.
+    The last failure is raised so the caller can skip the note. retries caps the
+    ladder: the adaptive splitter passes 1, because a deterministic too-many-
+    tokens failure repays every retry with the same 500 and the full ladder at
+    every split level turned an 11-note repair into a 10-minute stall.
     """
-    url, body, headers = _embed_request(text)
+    url, body, headers = _embed_request(text, model)
     last_err: Exception | None = None
-    for attempt in range(len(_RETRY_WAITS) + 1):
+    waits = _RETRY_WAITS if retries is None else _RETRY_WAITS[:retries]
+    for attempt in range(len(waits) + 1):
         try:
             req = urllib.request.Request(url, data=body, headers=headers)
             with urllib.request.urlopen(req, timeout=120) as r:
@@ -147,8 +141,8 @@ def embed(text: str) -> list[float]:
             last_err = RuntimeError(f"backend returned no embedding (model '{EMBED_MODEL}')")
         except (urllib.error.HTTPError, urllib.error.URLError, ConnectionError, TimeoutError) as e:
             last_err = e
-        if attempt < len(_RETRY_WAITS):
-            time.sleep(_RETRY_WAITS[attempt])
+        if attempt < len(waits):
+            time.sleep(waits[attempt])
     raise RuntimeError(
         f"Embedding backend '{EMBED_BACKEND}' at {EMBED_URL} failed after retries ({last_err})."
     )
@@ -165,49 +159,100 @@ def _mean_pool(vectors: list[list[float]]) -> list[float]:
     return [sum(v[i] for v in vectors) / n for i in range(dim)]
 
 
-def embed_note(text: str) -> list[float]:
-    """Embed a whole note: split into safe-sized chunks, embed each, average them.
+_FM_RE = re.compile(r"^---\n(.*?)\n---\n?", re.DOTALL)
+_FM_LIST_RE = re.compile(r"^(aliases|related-people|related-projects|tags):\s*\[(.+?)\]\s*$", re.MULTILINE)
+_FM_TYPE_RE = re.compile(r"^type:\s*[\"\']?([A-Za-z0-9_-]+)", re.MULTILINE)
 
-    A note longer than the model's token limit cannot be embedded in one call, so
-    we chunk it and mean-pool - representing the entire note, not just its opening.
-    Chunk count is capped so a giant transcript stays fast (the cap still covers
-    ~9600 chars, far more than any preamble + first sections)."""
+
+def prepare_note_text(stem: str, text: str) -> tuple[str, str]:
+    """Return (identity_header, cleaned_body) for embedding.
+
+    The header names the note (title, type, aliases, related people/projects) so
+    every chunk stays reachable by described role, not just by title words. The
+    body drops frontmatter and empty template sections - a daily note that is
+    mostly unfilled scaffolding must not have its one real paragraph diluted by
+    boilerplate headings (stress-test fix 13/24)."""
+    fm = ""
+    m = _FM_RE.match(text)
+    if m:
+        fm = m.group(1)
+        text = text[m.end():]
+    bits = [stem]
+    tm = _FM_TYPE_RE.search(fm)
+    if tm:
+        bits.append(tm.group(1))
+    for _, items in _FM_LIST_RE.findall(fm):
+        bits.extend(i.strip().strip("\"\'[]") for i in items.split(",") if i.strip())
+    header = " | ".join(dict.fromkeys(b for b in bits if b)) + "\n"
+    # Drop sections that contain no prose: a heading directly followed by another
+    # heading (or EOF) is template scaffolding, not content.
+    lines = text.splitlines()
+    kept: list[str] = []
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("#"):
+            nxt = next((l for l in lines[i + 1:] if l.strip()), "")
+            if not nxt or nxt.lstrip().startswith("#"):
+                continue
+        kept.append(line)
+    body = re.sub(r"\n{3,}", "\n\n", "\n".join(kept)).strip()
+    return header, body
+
+
+def embed_note(text: str) -> list[float]:
+    """Embed a whole note into ONE mean-pooled vector (legacy shape; kept for
+    compatibility - build_index stores per-chunk vectors via embed_note_chunks)."""
+    vecs = embed_note_chunks(text)
+    return _mean_pool(vecs) if vecs else []
+
+
+def embed_note_chunks(text: str, header: str = "") -> list[list[float]]:
+    """Embed a note as per-chunk vectors (stress-test fix 13/24).
+
+    Mean-pooling a long note produced one averaged mumble: a 10-section dossier
+    answering a query in section 7 has one strong vector and nine unrelated ones,
+    and the average drowns the signal 9-to-1. Chunks are scored independently at
+    query time (best chunk wins), so each chunk carries the note's identity
+    header (title/type/aliases/related) - a mid-dossier section must still know
+    who it is about."""
     text = text.strip()
     if not text:
         return []
-    chunks = [text[i:i + _CHUNK_CHARS] for i in range(0, len(text), _CHUNK_CHARS)][:_MAX_CHUNKS]
-    return _mean_pool([embed(c) for c in chunks])
+    body_room = max(200, _CHUNK_CHARS - len(header))
+    chunks = [text[i:i + body_room] for i in range(0, len(text), body_room)][:_MAX_CHUNKS]
+    vecs: list[list[float]] = []
+    for c in chunks:
+        vecs.extend(_embed_adaptive(c, header))
+    return vecs
+
+
+def _embed_adaptive(text: str, header: str) -> list[list[float]]:
+    """Embed one chunk, halving it on failure (stress-test fix 14/24).
+
+    Retry cures transient failures; these were deterministic: token-dense
+    content (a 1,066-char table of euro-rows) blows past the model's 512-token
+    window at char counts where prose fits fine, and failed on every build.
+    Char count is a bad proxy for tokens (even 'x'*1200 fails), so no fixed
+    chunk size is safe - halve until it fits, floor at 300 chars. 6-decimal
+    rounding is far beyond cosine's needs and halves the on-disk index."""
+    try:
+        return [[round(x, 6) for x in embed(header + text, retries=1)]]
+    except Exception:
+        if len(text) <= 300:
+            raise
+        mid = len(text) // 2
+        return _embed_adaptive(text[:mid], header) + _embed_adaptive(text[mid:], header)
 
 
 # --------------------------------------------------------------------------- #
 # Pure-stdlib vector math
 # --------------------------------------------------------------------------- #
-def embed_note_detail(text: str) -> tuple[list[float], list[dict] | None]:
-    """Embed a note. Returns (pooled_vector, per_chunk_records or None).
-
-    Short notes behave exactly as before: chunk, embed, mean-pool, no chunk records.
-    Notes over _CHUNK_THRESHOLD additionally keep every chunk's own vector so a
-    query can match one PASSAGE rather than the whole document's average. The
-    pooled vector is still written for consumers that only know the old format.
-    """
-    if not text.strip():
-        return [], None
-    big = len(text) >= _CHUNK_THRESHOLD
-    cap = _CHUNK_MAX_STORED if big else _MAX_CHUNKS
-    raw = [text[i:i + _CHUNK_CHARS] for i in range(0, len(text), _CHUNK_CHARS)][:cap]
-    offs = list(range(0, len(text), _CHUNK_CHARS))[:cap]
-    vecs = [embed(c) for c in raw]
-    pooled = _mean_pool(vecs)
-    if not big:
-        return pooled, None
-    return pooled, [{"off": o, "vec": v} for o, v in zip(offs, vecs) if v]
-
-
 def cosine(a: list[float], b: list[float]) -> float:
     """Cosine similarity in [-1, 1]; how close two meaning-coordinates point."""
     if not a or not b or len(a) != len(b):
         return 0.0
-    dot = sum(x * y for x, y in zip(a, b))
+    # strict=True: a and b are already verified equal-length above, so this
+    # never raises here - it documents the invariant for future edits (#164).
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
     na = math.sqrt(sum(x * x for x in a))
     nb = math.sqrt(sum(y * y for y in b))
     if na == 0 or nb == 0:
@@ -229,7 +274,7 @@ def _excluded(rel: str) -> bool:
 def _iter_notes(vault: Path):
     for md in sorted(vault.rglob("*.md")):
         parts = md.relative_to(vault).parts
-        if SKIP_DIRS & set(parts):
+        if any(pt.lower() in SKIP_DIRS or pt.lower().endswith("templates") for pt in parts):
             continue
         if md.name.endswith(".excalidraw.md"):
             continue  # drawings are raw JSON, not prose - they bloat and fail embedding
@@ -245,21 +290,28 @@ def build_index(vault: Path, verbose: bool = True) -> dict:
             cache = json.loads(index_path.read_text())
         except Exception:
             cache = {}
-    # Invalidate the whole cache when the embedding model OR the chunk geometry
-    # changed. Without this, unchanged notes keep vectors from the PREVIOUS model
-    # (or previous chunk boundaries) while the header advertises the new one - the
-    # exact silent-mixing bug that made the 2026-07-30 bge-m3 switch require
-    # deleting the index by hand. Now a param change simply forces a full rebuild.
-    _prev = (cache.get("model"), cache.get("chunk_chars"), cache.get("chunk_threshold"))
-    _now = (EMBED_MODEL, _CHUNK_CHARS, _CHUNK_THRESHOLD)
-    if cache and _prev != _now:
-        if verbose:
-            print(f"  [cache] build params changed {_prev} -> {_now}; ignoring cached vectors",
-                  file=sys.stderr)
-        cache = {}
-    old = cache.get("notes", {})
+    # Format 2 = per-chunk vectors with identity headers (fix 13/24). A cache in
+    # the old shape must not be reused: the note text is unchanged but what we
+    # embed for it is not. Same rule for a MODEL switch (fix 16/24): vectors
+    # from different embedding models live in different spaces - mixing them
+    # silently would make every similarity meaningless.
+    # Upstream validates format + model. This fork also pins the CHUNK GEOMETRY:
+    # _CHUNK_CHARS/_MAX_CHUNKS are tuned per embedding backend here, and changing
+    # them changes what gets embedded for an unchanged note. Without this, edited
+    # geometry keeps stale vectors while the header advertises the new setting -
+    # the same silent-mixing shape that made the 2026-07-30 bge-m3 switch require
+    # deleting the index by hand.
+    cache_ok = (
+        cache.get("format") == 2
+        and cache.get("model") == EMBED_MODEL
+        and cache.get("chunk_chars") == _CHUNK_CHARS
+        and cache.get("max_chunks") == _MAX_CHUNKS
+    )
+    old = cache.get("notes", {}) if cache_ok else {}
     new: dict = {}
-    embedded = reused = skipped = failed = 0
+    embedded = reused = skipped = failed = degraded = 0
+    degraded_paths: list[str] = []
+    dropped_paths: list[str] = []
 
     for md in _iter_notes(vault):
         rel = md.relative_to(vault).as_posix()
@@ -278,39 +330,62 @@ def build_index(vault: Path, verbose: bool = True) -> dict:
             continue
         # An empty/whitespace-only note has no body to embed; fall back to its title
         # (which still carries meaning) so it stays findable. Skip only if even that is empty.
-        embed_text = text if text.strip() else md.stem
+        header, body = prepare_note_text(md.stem, text)
+        # A note that is all scaffolding still embeds its identity header, so it
+        # stays findable by name/aliases. Skip only if even that is empty.
+        embed_text = body if body else header.strip()
         if not embed_text.strip():
             continue
+        degraded_note = False
         try:
-            vec, chunk_recs = embed_note_detail(embed_text)
-        except Exception as e:  # one bad note must not abort a 1000-note run
-            failed += 1
-            if verbose:
-                print(f"  [skip] {rel}: {e}", file=sys.stderr)
-            continue
-        new[rel] = {"hash": h, "title": md.stem, "vec": vec}
-        if chunk_recs:
-            new[rel]["chunks"] = chunk_recs
+            vecs = embed_note_chunks(embed_text, header=header)
+        except Exception:
+            # The body will not embed even split down - keep the note findable
+            # by NAME at least: an identity-only vector beats silent absence.
+            try:
+                vecs = [[round(x, 6) for x in embed(header.strip() or md.stem)]]
+                degraded_note = True
+            except Exception as e:  # one bad note must not abort a 1000-note run
+                failed += 1
+                dropped_paths.append(rel)
+                if verbose:
+                    print(f"  [skip] {rel}: {e}", file=sys.stderr)
+                continue
+        tm = _FM_TYPE_RE.search(text[:400])
+        entry = {"hash": h, "title": md.stem, "vecs": vecs}
+        if tm:
+            entry["type"] = tm.group(1).lower()
+        if degraded_note:
+            entry["degraded"] = True
+            degraded += 1
+            degraded_paths.append(rel)
+        new[rel] = entry
         embedded += 1
         if verbose and embedded % 50 == 0:
             print(f"  embedded {embedded} notes...", file=sys.stderr)
 
-    n_chunked = sum(1 for v in new.values() if v.get("chunks"))
-    n_chunkvecs = sum(len(v.get("chunks") or ()) for v in new.values())
     out = {
         "model": EMBED_MODEL,
+        "format": 2,
         "chunk_chars": _CHUNK_CHARS,
-        "chunk_threshold": _CHUNK_THRESHOLD,
+        "max_chunks": _MAX_CHUNKS,
         "notes": new,
     }
     index_path.write_text(json.dumps(out), encoding="utf-8")
     if verbose:
+        total_eligible = len(new) + failed
+        pct = (100.0 * len(new) / total_eligible) if total_eligible else 100.0
         print(
             f"[semantic] indexed {len(new)} notes ({embedded} new, {reused} cached, "
-            f"{skipped} excluded, {failed} failed; {n_chunked} chunk-level with "
-            f"{n_chunkvecs} chunk vectors) -> {index_path}",
+            f"{skipped} excluded, {degraded} degraded, {failed} dropped) -> {index_path}",
             file=sys.stderr,
         )
+        print(f"[semantic] coverage: {len(new)}/{total_eligible} ({pct:.1f}%)", file=sys.stderr)
+        # Gaps must be a report, not a surprise: name every degraded/dropped note.
+        for rel in degraded_paths:
+            print(f"  [degraded to identity-only] {rel}", file=sys.stderr)
+        for rel in dropped_paths:
+            print(f"  [DROPPED - not findable semantically] {rel}", file=sys.stderr)
     return out
 
 
@@ -326,21 +401,17 @@ def load_index(vault: Path) -> dict:
 # --------------------------------------------------------------------------- #
 def semantic_search(query: str, index: dict, limit: int = 10) -> list[dict]:
     """Rank notes by meaning-distance from the query."""
-    qvec = embed(query)
-    scored = []
-    for rel, n in index["notes"].items():
-        best = cosine(qvec, n.get("vec") or [])
-        at = None
-        # Chunk-level notes score by their BEST-matching passage, not by the
-        # document average - that is the whole point of storing chunks.
-        for c in (n.get("chunks") or ()):
-            sc = cosine(qvec, c.get("vec") or [])
-            if sc > best:
-                best, at = sc, c.get("off")
-        rec = {"path": rel, "title": n["title"], "score": best}
-        if at is not None:
-            rec["match_off"] = at
-        scored.append(rec)
+    # The query must live in the same vector space as the index (fix 16/24).
+    qvec = embed(query, model=index.get("model"))
+
+    def _score(n: dict) -> float:
+        vecs = n.get("vecs") or ([n["vec"]] if n.get("vec") else [])
+        return max((cosine(qvec, v) for v in vecs), default=0.0)
+
+    scored = [
+        {"path": rel, "title": n["title"], "score": _score(n)}
+        for rel, n in index["notes"].items()
+    ]
     scored.sort(key=lambda r: r["score"], reverse=True)
     return scored[:limit]
 

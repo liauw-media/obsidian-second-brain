@@ -1,7 +1,11 @@
 ---
 description: Record decisions - lightweight by default (logged to project notes), or a full ADR record with --formal
 category: thinking
+trigger-mode: proactive
 triggers_en: ["extract decisions", "log decisions", "what did we decide", "log this decision", "ADR", "record decision", "decision record"]
+triggers_es: ["saca las decisiones de esta conversación", "registra las decisiones", "¿qué decidimos?", "anota esta decisión", "ADR", "acta de decisión formal"]
+triggers_pt: ["extraia decisões", "registre decisões", "o que decidimos", "registre esta decisão", "adr", "registrar decisão", "registro de decisão"]
+triggers_zh: ["记录这个决定", "我们刚才决定了什么", "把这些决策整理出来", "生成决策记录", "写一份 ADR"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-decide $ARGUMENTS`:
@@ -22,8 +26,8 @@ Two depths, one command. The optional argument narrows focus to a topic. Add `--
 
 ### Formal mode (`--formal`)
 
-2. Identify the structural decision - from the argument or recent conversation (a project graduated, a folder reorganized, a convention adopted, a concept promoted to hub). To surface decisions already made in code but never recorded, run `python scripts/mine_commit_decisions.py --repo <project> --json` from the skill repo - it scans git history for decision-shaped commits ("switch to", "replace", "adopt", "rename", "migrate") and returns ADR candidates.
-3. Create a decision record in the decisions folder resolved per `references/folder-map.md` (wiki-style `wiki/decisions/YYYY-MM-DD - Title.md`, Obsidian-style `Knowledge/ADR-YYYY-MM-DD - Title.md`), with frontmatter `date`, `type: adr`, `status: accepted`, `tags: [decision-record]`, `ai-first: true`. Structure:
+2. Identify the structural decision - from the argument or recent conversation (a project graduated, a folder reorganized, a convention adopted, a concept promoted to hub). To surface decisions already made in code but never recorded, run `uv run --directory "SKILL_ROOT" scripts/mine_commit_decisions.py --repo <project> --json` (the skill root was given at session start as **Skill root**; substitute it for `SKILL_ROOT`) - it scans git history for decision-shaped commits ("switch to", "replace", "adopt", "rename", "migrate") and returns ADR candidates.
+3. Create a decision record in the decisions folder resolved per `references/folder-map.md` (wiki-style `wiki/decisions/YYYY-MM-DD - Title.md`, Obsidian-style `Knowledge/ADR-YYYY-MM-DD - Title.md`), with frontmatter `date`, `type: adr`, `status: accepted`, `tags: [adr, decision]`, `ai-first: true`. Structure:
    - **Decision** - one-line summary of what was decided.
    - **Context** - what prompted it (the problem or trigger).
    - **Options Considered** - 2-3 alternatives evaluated.
@@ -37,6 +41,6 @@ Decision records keep the vault from becoming a black box: when a future session
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

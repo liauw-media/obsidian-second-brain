@@ -47,7 +47,9 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 # Load env (OBSIDIAN_VAULT_PATH + optional keys) the same way the research toolkit does.
 try:
     from research.lib.config import VAULT_PATH  # noqa: F401  (import triggers dotenv load)
-except Exception:  # pragma: no cover - fall back to a bare dotenv load
+# config.py raises SystemExit (a BaseException) when OBSIDIAN_VAULT_PATH is
+# unset, so a bare `except Exception` lets it kill the importing process.
+except (Exception, SystemExit):  # pragma: no cover - fall back to a bare dotenv load
     try:
         from dotenv import load_dotenv
 
@@ -199,10 +201,66 @@ def _rank_of_gold(results: list[dict[str, Any]], gold: list[str]) -> int:
 
 
 def _searcher(mode: str):
-    """Return a (label, fn(query)->results) for the chosen retrieval mode."""
+    """Return a (label, fn(query)->results) for the chosen retrieval mode.
+
+    Four modes, four TRUE labels (stress-test fix 10/24 - before this, "lexical"
+    silently measured the fused blend and "hybrid" fused an already-fused input,
+    double-counting semantic and flipping the semantic-vs-hybrid conclusion):
+
+      lexical   pure word-match, fusion forced off
+      default   exactly what the shipped MCP serves (env-driven fusion)
+      semantic  local embeddings only
+      hybrid    single RRF of pure lexical + semantic
+    """
     if mode == "lexical":
-        return "term-frequency, title-weighted (vault_ops.search)", \
+        return "pure lexical: term-frequency, title-weighted (fusion off)", \
+            lambda q: vault_ops.search(q, limit=SEARCH_LIMIT, semantic=False)
+    if mode == "default":
+        return "shipped default: vault_ops.search (lexical + semantic RRF when available)", \
             lambda q: vault_ops.search(q, limit=SEARCH_LIMIT)
+    if mode == "external":
+        # Benchmark ANY external retrieval engine on the same cases: point
+        # RETRIEVAL_EVAL_EXTERNAL_CMD at a command that takes the query as its
+        # final argument and prints ranked results - a JSON array of paths (or
+        # of {"path": ...} objects), or plain newline-separated paths. This is
+        # how a TypeAgent / structured-RAG / vector-DB runner competes against
+        # the shipped search without being imported or vendored (pattern from
+        # the structured-rag eval fork, fork-insights round 2).
+        import os
+        import shlex
+        import subprocess
+        cmd = os.environ.get("RETRIEVAL_EVAL_EXTERNAL_CMD", "").strip()
+        if not cmd:
+            raise SystemExit(
+                "External mode needs RETRIEVAL_EVAL_EXTERNAL_CMD - a command that "
+                "takes the query as its final argument and prints ranked note "
+                "paths (JSON array or one per line)."
+            )
+
+        def _external(q: str) -> list[dict[str, Any]]:
+            proc = subprocess.run(
+                shlex.split(cmd) + [q],
+                capture_output=True, text=True, timeout=120,
+            )
+            if proc.returncode != 0:
+                print(f"[external] engine failed on {q!r}: {proc.stderr.strip()[:200]}", file=sys.stderr)
+                return []
+            out = proc.stdout.strip()
+            if not out:
+                return []
+            try:
+                parsed = json.loads(out)
+                items = parsed if isinstance(parsed, list) else []
+            except json.JSONDecodeError:
+                items = out.splitlines()
+            results = []
+            for item in items:
+                path = item.get("path") if isinstance(item, dict) else item
+                if isinstance(path, str) and path.strip():
+                    results.append({"path": path.strip()})
+            return results[:SEARCH_LIMIT]
+
+        return f"external engine: {cmd}", _external
     import semantic_search as ss  # local module; needs Ollama running
     vault = vault_ops.resolve_vault()
     if not ss.ollama_available():
@@ -215,9 +273,11 @@ def _searcher(mode: str):
     if mode == "semantic":
         return f"local embeddings: {index.get('model')} (semantic_search)", \
             lambda q: ss.semantic_search(q, index, limit=SEARCH_LIMIT)
-    # hybrid
-    return f"hybrid: lexical + {index.get('model')} (RRF)", \
-        lambda q: ss.hybrid_search(q, index, vault_ops.search(q, limit=SEARCH_LIMIT), limit=SEARCH_LIMIT)
+    # hybrid: the lexical arm MUST be pure, or semantic gets fused twice
+    return f"hybrid: pure lexical + {index.get('model')} (single RRF)", \
+        lambda q: ss.hybrid_search(q, index,
+                                   vault_ops.search(q, limit=SEARCH_LIMIT, semantic=False),
+                                   limit=SEARCH_LIMIT)
 
 
 def evaluate(cases_path: Path, as_json: bool, mode: str = "lexical") -> int:
@@ -236,7 +296,15 @@ def evaluate(cases_path: Path, as_json: bool, mode: str = "lexical") -> int:
     label, search_fn = _searcher(mode)
     per_case: list[dict[str, Any]] = []
     for c in cases:
-        results = search_fn(c["q"])
+        try:
+            results = search_fn(c["q"])
+        except Exception as e:
+            # One bad case must not discard every case already scored. In
+            # semantic/hybrid mode embed() uses the full (1,3,8,15) retry ladder
+            # at 120s per attempt, so a slow backend can burn ~10 minutes here
+            # and then take the entire run down with it. Count it as a miss.
+            print(f"  case failed, counted as a miss: {c['q'][:60]!r}: {e}", file=sys.stderr)
+            results = []
         rank = _rank_of_gold(results, c.get("gold", []))
         top = results[0]["path"] if results else None
         per_case.append({
@@ -300,12 +368,25 @@ def main() -> int:
     ap.add_argument("--cases", type=Path, default=DEFAULT_CASES,
                     help=f"Cases JSONL path (default: {DEFAULT_CASES})")
     ap.add_argument("--json", action="store_true", help="Emit JSON instead of a text report")
-    ap.add_argument("--mode", choices=("lexical", "semantic", "hybrid"), default="lexical",
-                    help="Retrieval to score: lexical (word-match, default), semantic "
-                         "(local embeddings), or hybrid (both fused). semantic/hybrid need Ollama.")
+    ap.add_argument("--mode", choices=("lexical", "default", "semantic", "hybrid", "external"),
+                    default="lexical",
+                    help="Retrieval to score: lexical (pure word-match, default), "
+                         "default (exactly what the shipped MCP serves), semantic "
+                         "(local embeddings), or hybrid (pure lexical + semantic, "
+                         "single RRF). semantic/hybrid need Ollama.")
+    ap.add_argument("--force", action="store_true",
+                    help="Allow --generate to overwrite an existing cases file")
     args = ap.parse_args()
 
     if args.generate is not None:
+        if args.cases.exists() and not args.force:
+            print(
+                f"Refusing to overwrite existing cases at {args.cases}: regenerating "
+                f"mid-experiment breaks the before/after comparison on the SAME cases.\n"
+                f"Pass --force to overwrite, or --cases <new-path> for a fresh set.",
+                file=sys.stderr,
+            )
+            return 1
         return generate(args.generate, args.cases, args.style)
     return evaluate(args.cases, args.json, args.mode)
 

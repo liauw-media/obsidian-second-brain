@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""/x-read [url] - deep-read an X post via Grok + Live Search.
+"""/x-read [url] - deep-read an X post via Grok's x_search tool.
 
 Output: original post (verbatim) + TL;DR + key claims + reply sentiment + voices.
 Default behavior: print to chat. Does NOT save to vault unless the user explicitly asks.
 """
 
 import sys
+
 from .lib import grok
 
 PROMPT_TEMPLATE = """Analyze this X post and return a structured deep-read.
@@ -55,7 +56,7 @@ def main(argv: list[str]) -> int:
         print("Continuing anyway - Grok will tell us if it can't fetch.", file=sys.stderr)
 
     prompt = PROMPT_TEMPLATE.format(url=url)
-    print(f"[/x-read] Fetching {url} via Grok + Live Search...\n", file=sys.stderr)
+    print(f"[/x-read] Fetching {url} via Grok x_search...\n", file=sys.stderr)
 
     try:
         result = grok.call(
@@ -71,8 +72,10 @@ def main(argv: list[str]) -> int:
         return 1
 
     print(result["text"])
+    approx = "~" if result.get("cost_is_estimate") else ""
     print(
-        f"\n---\n[cost: ${result['cost_usd']:.4f} · tokens in/out: {result['input_tokens']}/{result['output_tokens']}]",
+        f"\n---\n[cost: {approx}${result['cost_usd']:.4f} · {result.get('model', '?')}"
+        f" · tokens in/out: {result['input_tokens']}/{result['output_tokens']}]",
         file=sys.stderr,
     )
     return 0

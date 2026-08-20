@@ -2,6 +2,9 @@
 description: Extract metadata, transcript, and summary from a podcast episode, saved as an AI-first note in the vault
 category: research
 triggers_en: ["summarize this podcast", "podcast episode summary", "extract podcast", "what's in this episode"]
+triggers_es: ["resume este pódcast", "resumen del episodio", "extrae este pódcast", "qué dice este episodio"]
+triggers_pt: ["resuma este podcast", "resumo de episódio de podcast", "extraia este podcast", "o que há neste episódio"]
+triggers_zh: ["总结这期播客", "提取播客文字稿", "这期节目讲了什么", "把这期播客整理进知识库"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/podcast [url]`:
@@ -14,9 +17,9 @@ Use the obsidian-second-brain skill. Execute `/podcast [url]`:
 
    If no input given, ask: "Which podcast episode? Paste the Apple Podcasts, Spotify, or RSS feed URL."
 
-2. Run the Python command from the repo root (`~/Projects/personal/obsidian-second-brain/`):
+2. Run the script from the skill root (its absolute path was given at session start as **Skill root**; substitute it for `SKILL_ROOT`):
    ```bash
-   uv run -m scripts.research.podcast_extract "<url>"
+   uv run --directory "SKILL_ROOT" -m scripts.research.podcast_extract "<url>"
    ```
 
 3. The script:
@@ -31,7 +34,7 @@ Use the obsidian-second-brain skill. Execute `/podcast [url]`:
 
 4. Show the script output verbatim to the user.
 
-5. **Default save behavior: saves automatically.** AI-first note written to `Research/Podcasts/YYYY-MM-DD — <episode-title-slug>.md` (em-dash separator, matches the existing `/youtube` and `/research` filename pattern). Frontmatter includes `show`, `host`, `episode-title`, `episode-url`, `feed-url`, `guid`, `published`, `duration`, `transcript-source` (one of `rss-transcript-tag` / `whisper-api` / `show-notes`), and tags.
+5. **Default save behavior: saves automatically.** AI-first note written to `Research/Podcasts/YYYY-MM-DD - <episode-title-slug>.md` (hyphen separator, matches the existing `/youtube` and `/research` filename pattern). Frontmatter includes `show`, `host`, `episode-title`, `episode-url`, `feed-url`, `guid`, `published`, `duration`, `transcript-source` (one of `rss-transcript-tag` / `whisper-api` / `show-notes`), and tags.
 
 6. Plain English triggers: "summarize this podcast", "what's in this episode", "transcribe this podcast", or just pasting an Apple Podcasts URL with a question about content.
 
@@ -41,6 +44,6 @@ Use the obsidian-second-brain skill. Execute `/podcast [url]`:
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md`. That means: `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval, not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md`. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. That means: `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future agent retrieval, not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

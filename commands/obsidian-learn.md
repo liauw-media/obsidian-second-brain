@@ -2,11 +2,14 @@
 description: Review vault learnings, prune stale ones, surface active patterns - the vault's lessons compound or expire
 category: thinking
 triggers_en: ["review learnings", "what have I learned", "show lessons", "prune learnings"]
+triggers_es: ["revisa los aprendizajes", "qué he aprendido", "muéstrame las lecciones", "poda los aprendizajes"]
+triggers_pt: ["revise aprendizados", "o que eu aprendi", "mostre lições", "reduza aprendizados"]
+triggers_zh: ["回顾我学到的东西", "我最近学到了什么", "整理知识库里的经验", "清理过时的学习记录"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-learn $ARGUMENTS`:
 
-The optional argument is a scope: `recent` (last 30 days, default), `all` (entire vault), or a topic name.
+The optional argument is a scope: `recent` (last 30 days, default), `all` (entire vault), or a topic name. Scope limits the review LIST only - the Stale and Superseded classifications always scan the entire vault, since a 6-months-old learning cannot appear inside a 30-day window.
 
 1. Read `_CLAUDE.md` first if it exists in the vault root
 2. Read `index.md` and recent operation log for vault context (if `Logs/` exists: read the last 2-3 `Logs/YYYY-MM-DD.md` files; otherwise read `log.md`)
@@ -14,8 +17,8 @@ The optional argument is a scope: `recent` (last 30 days, default), `all` (entir
 3. Spawn parallel subagents to gather learnings:
 
    - **Lessons agent**: scan all daily notes for "Lesson learned" sections, "What didn't" sections, evening review insights
-   - **Decisions agent**: read all ADRs in `wiki/decisions/` - extract the rationale and outcome of each
-   - **Reports agent**: read recent emerge/synthesize/connect/challenge reports in `wiki/concepts/` (the auto-generated pattern reports)
+   - **Decisions agent**: read all ADRs in the decisions folder (resolved per `references/folder-map.md` - wiki-style `wiki/decisions/`, Obsidian-style `Knowledge/` with `ADR-` filename prefix) - extract the rationale and outcome of each
+   - **Reports agent**: read recent emerge/synthesize/connect/challenge reports in the concepts folder (resolved per `references/folder-map.md`) - the auto-generated pattern reports
    - **Mistakes agent**: scan dev logs and daily notes for "what didn't work", "wasted time on", "next time", "lesson", phrases indicating learning from failure
    - **Wins agent**: scan for patterns that worked - "this saved time", "this approach worked", recurring success patterns
 
@@ -45,7 +48,7 @@ The optional argument is a scope: `recent` (last 30 days, default), `all` (entir
    ## Top 5 Lessons of the Period
    - Most impactful learnings ranked by frequency × recency × consequence
 
-6. Save the report to `wiki/concepts/YYYY-MM-DD — Learnings Review.md`
+6. Save the report to the concepts folder (resolved per `references/folder-map.md`) as `YYYY-MM-DD - Learnings Review.md` (`type: learnings-review`, schema in `references/ai-first-rules.md`)
 7. Append to the operation log: if `Logs/` exists write `**HH:MM** - learn | X active, Y stale, Z superseded, N promotion candidates` to `Logs/YYYY-MM-DD.md`; otherwise append `## [YYYY-MM-DD] learn | X active, Y stale, Z superseded, N promotion candidates` to `log.md`
 8. Update today's daily note with a brief summary
 9. Offer to:
@@ -57,6 +60,6 @@ Lessons that aren't reviewed don't compound. This command turns scattered notes 
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

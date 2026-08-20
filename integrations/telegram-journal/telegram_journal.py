@@ -22,14 +22,14 @@ Config/secrets come from ~/.config/obsidian-second-brain/telegram_journal.env
 TRANSCRIBE_BACKEND=openai, the default), ANTHROPIC_API_KEY, VAULT_PATH
 This file holds no secrets and is safe to read or share.
 """
-import os
-import re
-import sys
-import json
 import base64
 import datetime
+import json
+import os
 import pathlib
+import re
 import subprocess
+import sys
 
 import requests
 
@@ -122,7 +122,7 @@ def download(file_id):
     info = tg("getFile", file_id=file_id)
     path = info["result"]["file_path"]
     data = requests.get(f"{FILE_API}/{path}", timeout=120).content
-    return data, os.path.splitext(path)[1].lower()
+    return data, pathlib.Path(path).suffix.lower()
 
 
 def transcribe(file_id):
@@ -166,9 +166,9 @@ def transcribe_local(audio, suffix):
         except FileNotFoundError:
             raise RuntimeError(
                 f"local transcription needs the '{WHISPER_BIN}' CLI - "
-                "pip install openai-whisper (and install ffmpeg), or set WHISPER_BIN")
+                "pip install openai-whisper (and install ffmpeg), or set WHISPER_BIN") from None
         except subprocess.CalledProcessError as e:
-            raise RuntimeError(f"whisper failed: {(e.stderr or '').strip()[-300:]}")
+            raise RuntimeError(f"whisper failed: {(e.stderr or '').strip()[-300:]}") from e
         out = pathlib.Path(tmp) / f"{src.stem}.txt"
         return out.read_text().strip() if out.exists() else ""
 
@@ -222,8 +222,22 @@ def find_note(folder, name):
     return None
 
 
+def _folder(kind):
+    """Resolve a folder per references/folder-map.md instead of hardcoding
+    wiki-style: an Obsidian-style vault (the default bootstrap) would otherwise
+    get a parallel wiki/ tree forked into it. Rule: wiki/ at the root wins;
+    else the Obsidian-style folder if it exists; else the wiki default."""
+    wiki = {"daily": "wiki/daily", "entities": "wiki/entities", "projects": "wiki/projects", "concepts": "wiki/concepts", "stub": "wiki/stubs"}[kind]
+    obs = {"daily": "Daily", "entities": "People", "projects": "Projects", "concepts": "Knowledge", "stub": "Knowledge"}[kind]
+    if (VAULT / "wiki").is_dir():
+        return wiki
+    if (VAULT / obs).is_dir():
+        return obs
+    return wiki
+
+
 def daily_note(when):
-    return VAULT / "wiki" / "daily" / f"{when.strftime('%Y-%m-%d')}.md"
+    return VAULT / _folder("daily") / f"{when.strftime('%Y-%m-%d')}.md"
 
 
 def resolve_target(target, when):
@@ -232,15 +246,15 @@ def resolve_target(target, when):
     t = (target or "daily").strip()
     low = t.lower()
     if low.startswith("person:"):
-        p = find_note("wiki/entities", t.split(":", 1)[1])
+        p = find_note(_folder("entities"), t.split(":", 1)[1])
         if p:
             return p, p.stem, False
     elif low.startswith("project:"):
-        p = find_note("wiki/projects", t.split(":", 1)[1])
+        p = find_note(_folder("projects"), t.split(":", 1)[1])
         if p:
             return p, p.stem, False
     elif low == "finance":
-        p = find_note("wiki/projects", "Personal Finance")
+        p = find_note(_folder("projects"), "Personal Finance")
         if p:
             return p, p.stem, False
     return daily_note(when), "today's note", (low not in ("daily", "idea"))
@@ -254,7 +268,7 @@ def ensure_daily(note, when):
     dow = when.strftime("%A")
     note.write_text(
         f"---\ntype: daily\ndate: {day}\nday-of-week: {dow}\ntags:\n  - daily\n"
-        f"ai-first: true\n---\n\n## For future Claude\n\n"
+        f"ai-first: true\n---\n\n## For future agent\n\n"
         f"Daily note for {day} ({dow}). Journal entries captured via the Telegram journal bot.\n",
         encoding="utf-8",
     )
@@ -290,7 +304,7 @@ def remove_block(note, block):
 
 
 def save_image(img_bytes, ext, when):
-    folder = VAULT / "wiki" / "attachments"
+    folder = VAULT / "raw" / "images"
     folder.mkdir(parents=True, exist_ok=True)
     fname = f"{when.strftime('%Y-%m-%d-%H%M%S')}-journal{ext or '.jpg'}"
     (folder / fname).write_bytes(img_bytes)
@@ -335,9 +349,9 @@ def handle_move(chat_id, dest_text, when):
         target = "finance"
     elif "daily" in d or "today" in d:
         target = "daily"
-    elif find_note("wiki/entities", dest_text):
+    elif find_note(_folder("entities"), dest_text):
         target = f"person:{dest_text}"
-    elif find_note("wiki/projects", dest_text):
+    elif find_note(_folder("projects"), dest_text):
         target = f"project:{dest_text}"
     else:
         reply(chat_id, f"could not find a note called '{dest_text.strip()}' - left it where it is")
@@ -391,7 +405,7 @@ def handle_photo(msg, chat_id, when):
 
 
 PDF_PROMPT = """This PDF was saved by the user to their AI-first Obsidian vault. Write a note \
-for future-Claude retrieval.
+for future agent retrieval.
 
 Output (plain ASCII, no emoji):
 TITLE: <short descriptive title, max ~10 words>
@@ -449,7 +463,7 @@ def handle_document(msg, chat_id, when):
     data, _ = download(doc["file_id"])
 
     # save the file into the vault
-    att = VAULT / "wiki" / "attachments"
+    att = VAULT / "raw" / "pdfs"
     att.mkdir(parents=True, exist_ok=True)
     safe = re.sub(r"[^A-Za-z0-9._-]+", "-", name) or "document.pdf"
     fname = f"{when.strftime('%Y-%m-%d-%H%M%S')}-{safe}"
@@ -501,14 +515,14 @@ Context where it was mentioned:
 Reply with ONLY a JSON object:
 {{
  "type": "person | company | project | concept | stub",
- "body": "2-4 sentence note body for future-Claude: what or who {name} is, from the context plus what you reliably know. Mark anything uncertain as TBD. Do NOT invent specific facts (dates, numbers, titles, relationships) not supported by the context or common knowledge. Plain ASCII, no emoji."
+ "body": "2-4 sentence note body for future agent: what or who {name} is, from the context plus what you reliably know. Mark anything uncertain as TBD. Do NOT invent specific facts (dates, numbers, titles, relationships) not supported by the context or common knowledge. Plain ASCII, no emoji."
 }}"""
 
 NONEMBED_LINK = re.compile(r"(?<!\!)\[\[([^\]]+)\]\]")
 # the vault owner (from VAULT_OWNER) - skip making a note for them by full name or first name
 OWNER_NAMES = {OWNER.lower(), OWNER.split()[0].lower()} if OWNER else set()
-TYPE_FOLDER = {"person": "wiki/entities", "company": "wiki/entities",
-               "project": "wiki/projects", "concept": "wiki/concepts"}
+TYPE_KIND = {"person": "entities", "company": "entities",
+             "project": "projects", "concept": "concepts"}
 _ALL_STEMS = None
 
 
@@ -539,7 +553,7 @@ def create_stub(name, context, when):
     ntype = str(info.get("type") or "stub").strip().lower()
     if ntype not in ("person", "company", "project", "concept"):
         ntype = "stub"
-    folder = TYPE_FOLDER.get(ntype, "wiki/stubs")
+    folder = _folder(TYPE_KIND.get(ntype, "stub"))
     d = VAULT / folder
     d.mkdir(parents=True, exist_ok=True)
     note = d / f"{name}.md"
@@ -549,7 +563,7 @@ def create_stub(name, context, when):
     body = str(info.get("body") or "").strip() or f"Referenced in a capture on {today}. TBD."
     note.write_text(
         f"---\ntype: {ntype}\ndate: {today}\ntags: [{ntype}, telegram-capture]\nai-first: true\n---\n\n"
-        f"## For future Claude\n\n{body}\n",
+        f"## For future agent\n\n{body}\n",
         encoding="utf-8")
     all_stems().add(name.lower())
 
@@ -582,7 +596,7 @@ def queue_catchup(kind, summary, when, where=""):
     if not CATCHUP.exists():
         CATCHUP.write_text(
             "---\ntype: catchup-queue\nai-first: true\n---\n\n"
-            "## For future Claude\n\nUnprocessed captures from the Telegram journal bot, "
+            "## For future agent\n\nUnprocessed captures from the Telegram journal bot, "
             "newest at the bottom. Each line is `- [ ] date time | kind | summary | -> where`. "
             "Run /obsidian-catchup to review the unchecked items together, then they get "
             "checked off. The bot only queues here - it never processes.\n\n## Queue\n\n",

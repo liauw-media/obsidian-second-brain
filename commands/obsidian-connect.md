@@ -2,6 +2,9 @@
 description: Bridge two unrelated domains using your vault's link graph - forces creative friction to spark new ideas
 category: thinking
 triggers_en: ["connect domains", "cross-pollinate", "bridge ideas", "find an unexpected link"]
+triggers_es: ["conecta estos dos temas", "cruza ideas de distintos mundos", "busca una conexión inesperada", "conecta esto con algo que no tenga que ver"]
+triggers_pt: ["conecte domínios", "cruze ideias", "crie pontes entre ideias", "encontre uma ligação inesperada"]
+triggers_zh: ["把这两个领域联系起来", "帮我找跨领域连接", "看看这些想法有什么意外联系", "用我的笔记做跨界联想"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-connect $ARGUMENTS`:
@@ -29,6 +32,6 @@ The value is in unexpected links. If the connection is obvious, dig deeper. The 
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

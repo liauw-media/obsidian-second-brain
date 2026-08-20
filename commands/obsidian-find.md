@@ -2,6 +2,9 @@
 description: Smart vault search - returns results with context, not just filenames
 category: vault
 triggers_en: ["find in vault", "search my notes", "where is", "what did I write about"]
+triggers_es: ["busca en el vault", "busca en mis notas", "dónde está", "qué escribí sobre", "tengo algo sobre"]
+triggers_pt: ["encontre no vault", "pesquise minhas notas", "onde está", "o que eu escrevi sobre"]
+triggers_zh: ["在知识库里找一下", "搜索我的笔记", "我之前在哪篇笔记里写过", "我写过关于这个吗"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-find $ARGUMENTS`:
@@ -19,6 +22,6 @@ Do not just return filenames - return enough context for the user to act on the 
 
 ---
 
-**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. The vault is for future-Claude retrieval - not human reading.
+**AI-first rule:** Every note created or updated by this command MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter (`type`, `date`, `tags`, `ai-first: true`, plus type-specific fields), recency markers per external claim, mandatory `[[wikilinks]]` for every person/project/concept referenced, sources preserved verbatim with URLs inline, and confidence levels where applicable. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule. The vault is for future agent retrieval - not human reading.
 
 **Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

@@ -12,6 +12,7 @@
 
 PI_PLATFORM="pi"
 PI_DIR="pi"
+PI_SKILL_ROOT=".pi/skills/obsidian-second-brain"
 
 adapter_build() {
   local src="$1" dst="$2"
@@ -64,7 +65,13 @@ _pi_emit_prompts() {
     name="$(basename "$f" .md)"
     desc="$(parse_frontmatter "$f" description)"
     [[ -z "$desc" ]] && desc="Run the /$name command of the obsidian-second-brain skill."
-    desc="${desc#\"}"; desc="${desc%\"}"
+    desc="$(strip_quotes "$desc")"
+
+    # This build writes its own frontmatter, so a source trigger-mode does not
+    # travel unless it is encoded here (#181).
+    local trigmode
+    trigmode="$(parse_frontmatter "$f" trigger-mode)"
+    desc="$(with_trigger_policy "$desc" "$trigmode")"
 
     out="$dst/$name.md"
     {
@@ -94,11 +101,14 @@ _pi_command_takes_args() {
 _pi_rewrite_paths_for_prompt() {
   local file="$1"
   [[ -f "$file" ]] || return 0
-  perl -i -pe '
-    s|~/.claude/skills/obsidian-second-brain/|.pi/skills/obsidian-second-brain/|g;
-    s~(^|[^A-Za-z0-9_./-])\.?/?references/~$1.pi/skills/obsidian-second-brain/references/~g;
-    s~(^|[^A-Za-z0-9_./-])\.?/?scripts/(?!build\.sh)~$1.pi/skills/obsidian-second-brain/scripts/~g;
-  ' "$file"
+  # Home-dir install path is pi-specific; the SKILL_ROOT and references/
+  # rewrites are shared (see adapters/lib.sh).
+  perl -i -pe 's|~/.claude/skills/obsidian-second-brain/|'"$PI_SKILL_ROOT"'/|g;' "$file"
+  rewrite_skill_root "$file" "$PI_SKILL_ROOT"
+  rewrite_platform_paths "$file" "${PI_SKILL_ROOT#.}"
+  # NB: `scripts/` is deliberately not rewritten. Every invocation is
+  # `uv run --directory "SKILL_ROOT" scripts/foo.py`, so the path is relative to
+  # --directory. The previous rule prefixed it and produced a double path.
 }
 
 _pi_emit_skill() {
@@ -128,12 +138,11 @@ and this discovery skill (`/skill:obsidian-second-brain`).
    conventions.
 2. When the user types a prompt template like `/obsidian-save`, follow its
    instructions step by step.
-3. Treat the AI-first vault rule
-   (`./references/ai-first-rules.md`) as non-negotiable for every note you
-   write: `## For future Claude` preamble, rich frontmatter
-   (`type`, `date`, `tags`, `ai-first: true`), `[[wikilinks]]` for every
-   person/project/concept, recency markers per external claim, sources verbatim,
-   confidence levels where applicable.
+EOF
+
+  emit_ai_first_rule "./references/ai-first-rules.md"
+
+  cat <<'EOF'
 4. If `_CLAUDE.md` is missing, run `/obsidian-init` to generate it.
 
 ## Command routing table
@@ -159,23 +168,9 @@ EOF
   ' "$out"
 }
 
-_pi_copy_references() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-  find "$dst" -type f -name '*.md' -print0 | while IFS= read -r -d '' f; do
-    rewrite_tool_neutral "$f"
-    rewrite_platform_paths "$f" "$PI_DIR"
-  done
-}
+_pi_copy_references() { copy_references_rewritten "$1" "$2" "${PI_SKILL_ROOT#.}"; }  # see adapters/lib.sh
 
-_pi_copy_scripts() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-}
+_pi_copy_scripts() { copy_scripts_with_project "$1" "$2"; }  # see adapters/lib.sh
 
 _pi_emit_install_hint() {
   local dst="$1"

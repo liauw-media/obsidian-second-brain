@@ -60,18 +60,19 @@ load only when a skill is selected (progressive disclosure).
 2. When the user's request matches a skill, invoke it - by \`\$<skill-name>\`,
    via \`/skills\`, or let Codex select it implicitly from its description.
    You do not need a routing table here; the skill list is the router.
-3. Treat the AI-first vault rule (\`.codex/references/ai-first-rules.md\`) as
-   non-negotiable for every note you write: \`## For future Claude\` preamble,
-   rich frontmatter (\`type\`, \`date\`, \`tags\`, \`ai-first: true\`),
-   \`[[wikilinks]]\` for every person/project/concept, recency markers per
-   external claim, sources verbatim, confidence levels where applicable.
+EOF
+
+    emit_ai_first_rule ".codex/references/ai-first-rules.md"
+
+    cat <<EOF
 4. Do not invent skills. If none matches, ask the user or fall back to plain
    natural-language help.
 
 ## Scripts
 
 Python helpers live under \`.codex/scripts/\`. They run via
-\`uv run -m scripts.research.<name>\` from the vault root. Skills that need them
+\`(cd .codex && uv run -m scripts.research.<name> ...)\` - \`.codex/\` is a
+self-contained uv project, so modules and dependencies both resolve. Skills that need them
 reference the exact invocation inside the skill body.
 
 ---
@@ -98,14 +99,20 @@ _codex_emit_skills() {
     name="$(basename "$f" .md)"
     desc="$(parse_frontmatter "$f" description)"
     triggers="$(parse_frontmatter "$f" triggers_en)"
+    local trigmode
+    trigmode="$(parse_frontmatter "$f" trigger-mode)"
     [[ -z "$desc" ]] && desc="Run the $name command of the obsidian-second-brain skill."
 
     # Fold triggers into the description for implicit selection.
     if [[ -n "$triggers" ]]; then
       local trig_clean
-      trig_clean="$(echo "$triggers" | tr -d '[]"' | sed 's/,/, /g; s/  */ /g; s/^ *//; s/ *$//')"
+      trig_clean="$(format_triggers "$triggers")"
       [[ -n "$trig_clean" ]] && desc="$desc Triggers: $trig_clean."
     fi
+
+    # This build writes its own frontmatter, so a source trigger-mode does not
+    # travel unless it is encoded here (#181).
+    desc="$(with_trigger_policy "$desc" "$trigmode")"
 
     mkdir -p "$dst/$name"
     out="$dst/$name/SKILL.md"
@@ -120,31 +127,26 @@ _codex_emit_skills() {
     } > "$out"
 
     rewrite_tool_neutral "$out"
+    rewrite_skill_root "$out" ".${CODEX_DIR}"
     rewrite_platform_paths "$out" "$CODEX_DIR"
   done
 }
 
-_codex_copy_references() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-  find "$dst" -type f -name '*.md' -print0 | while IFS= read -r -d '' f; do
-    rewrite_platform_paths "$f" "$CODEX_DIR"
-  done
-}
+_codex_copy_references() { copy_references_rewritten "$1" "$2" "$CODEX_DIR"; }  # see adapters/lib.sh
 
-_codex_copy_scripts() {
-  local src="$1" dst="$2"
-  [[ -d "$src" ]] || return 0
-  mkdir -p "$dst"
-  cp -R "$src/." "$dst/"
-}
+_codex_copy_scripts() { copy_scripts_with_project "$1" "$2"; }  # see adapters/lib.sh
 
 _codex_emit_install_hint() {
   local dst="$1"
   cat > "$dst/INSTALL.md" <<'EOF'
 # Install on Codex CLI
+
+> **Deprecated.** This per-platform build is superseded by the unified Agent
+> Skills build (`bash scripts/build.sh --platform agent-skills`), which emits
+> one spec-compliant `.agents/skills/` tree that Codex CLI, OpenCode, and
+> Google Antigravity all read, and installs via `npx skills`. This codex-cli
+> build still works but will be removed in a future release. See
+> `dist/agent-skills/INSTALL.md`.
 
 ```bash
 # From the repo root, after running `bash scripts/build.sh --platform codex-cli`:
@@ -164,10 +166,36 @@ Then in your vault:
 - `.codex/references/` holds shared specs (the AI-first vault rule) that skills
   reference.
 - `.codex/scripts/` holds the Python helpers invoked by the research toolkit
-  skills. Run them via `uv run -m scripts.research.<name>` from the vault root.
+  skills, plus a `pyproject.toml` making `.codex/` a self-contained uv project.
+  Run them via `(cd .codex && uv run -m scripts.research.<name> ...)`.
 
-Start Codex CLI from the vault root. Skills run in your current session - no
-`codex exec` wrapper, no per-command startup, and writes honor your session's
-approval/sandbox mode.
+## Where you start Codex is load-bearing
+
+Start Codex CLI **from the vault root**, or have the vault under git. This is a
+requirement, not a convenience:
+
+- Codex walks up to the **git root** looking for `.agents/skills`. A git-backed
+  vault therefore works from any subfolder - all skills still register.
+- A plain Obsidian vault is not a git repo. In that case, opening Codex in any
+  subfolder registers **zero** skills. There is no warning and no error;
+  `/skills` is simply empty and the session behaves like stock Codex.
+- The `.codex/references/` paths the skills cite are relative to this root too.
+  Start elsewhere and the AI-first spec is a dead path.
+
+If you keep your vault outside git and want to work from subfolders, run
+`git init` in the vault root once. Reported by @Palo-Alto-AI-Research-Lab on
+codex-cli 0.144.4 (issue #171).
+
+## Write-time validation hook (not included)
+
+This build ships no `hooks/` directory. The write-time AI-first validator
+(`validate-ai-first.sh`) is wired only in the Claude Code build. If your host
+exposes a post-write hook, wire it yourself from the source repo:
+`hooks/validate-ai-first.hook.yaml` is the platform-neutral spec and
+`hooks/validate-ai-first.sh` the implementation. Without it, the AI-first rule
+is enforced by the skill instructions alone.
+
+Skills run in your current session - no `codex exec` wrapper, no per-command
+startup, and writes honor your session's approval/sandbox mode.
 EOF
 }

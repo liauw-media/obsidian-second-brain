@@ -2,6 +2,9 @@
 description: Live project status from git + local docs - infers all context from vault notes, no config required
 category: vault
 triggers_en: ["projects overview", "project status", "what am I working on", "show projects"]
+triggers_es: ["resumen de proyectos", "estado de los proyectos", "en qué estoy trabajando", "muéstrame los proyectos"]
+triggers_pt: ["visão geral de projetos", "status dos projetos", "em que estou trabalhando", "mostre os projetos"]
+triggers_zh: ["看看所有项目的状态", "我现在在做哪些项目", "项目进展怎么样", "显示项目总览"]
 ---
 
 Use the obsidian-second-brain skill. Execute `/obsidian-projects $ARGUMENTS`:
@@ -27,7 +30,7 @@ Spawn one subagent per project. Each agent runs three checks:
 
 **Vault check:**
 - Read the project note
-- Extract: `status`, most recent entry in any `Recent Activity` or `## Last overview` section, `next_action`, open questions, blockers
+- Extract: `status`, most recent entry in any `Recent Activity` section, `next_action`, open questions, blockers. IGNORE `## Last overview` sections - this command writes those, and reading them back would mark stale projects active forever (a feedback loop)
 
 **Git check** (skip if no `repo:` field):
 - `git -C "<repo>" log --oneline --no-merges -15`
@@ -43,7 +46,7 @@ Spawn one subagent per project. Each agent runs three checks:
 
 Merge the three agent results into one status block per project:
 
-- **Status**: infer from activity recency: `active` (commits or vault update in last 7 days), `stalled` (7-30 days), `idle` (30+ days), `blocked` (explicit blocker found). Override with the note's `status:` field if it says `on-hold`, `completed`, or `archived`.
+- **Status**: infer from activity recency: `active` (commits or vault update in last 7 days, excluding `## Last overview` writes), `stalled` (7-30 days), `idle` (30+ days), `blocked` (explicit blocker found). Override with the note's `status:` field if it says `on-hold`, `completed`, or `archived`.
 - **Last session**: what was worked on and when. Prefer git commit dates + messages over vault dates.
 - **Next action**: single most concrete next step. Pull from vault open questions or docs TODO. If unclear, say so - do not invent one.
 - **Blocked by**: anything explicitly blocking. `none` if nothing found.
@@ -56,7 +59,7 @@ Print the full overview in the conversation immediately. Order: active first, th
 ## [Project Name]
 Status: active | stalled | idle | blocked | archived
 Repo: path/to/repo  (or "no repo")
-Vault: [[Projects/Project Name]]
+Vault: [[<projects folder>/Project Name]]  (use the folder resolved in step 1)
 
 Last session: YYYY-MM-DD - one sentence on what was done (source: git / vault / docs)
 Next action: specific next step, or "unclear - check vault note"
@@ -82,4 +85,6 @@ If a project note doesn't exist yet but was discoverable via git (e.g. the repo 
 
 ---
 
-**AI-first rule:** Every vault write MUST follow `references/ai-first-rules.md` - `## For future Claude` preamble, rich frontmatter, `[[wikilinks]]` for every project referenced, recency markers on git-sourced facts (e.g. `(as of 2026-05-21, git log)`), sources noted inline.
+**AI-first rule:** Every vault write MUST follow `references/ai-first-rules.md` - `## For future agent` preamble, rich frontmatter, `[[wikilinks]]` for every project referenced, recency markers on git-sourced facts (e.g. `(as of 2026-05-21, git log)`), sources noted inline. If that path does not resolve from your working directory, search upward for it; if you still cannot read it, say so before writing rather than producing a note that silently skips the rule.
+
+**Anti-fabrication:** Search exhaustively before claiming any note, person, or file is absent - false absence is the most common failure mode - and never invent facts, entities, or dates (mark unknowns as `TBD`). See the anti-fabrication and search-completeness hard rules in `references/ai-first-rules.md`.

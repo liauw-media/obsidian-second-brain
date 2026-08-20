@@ -18,19 +18,20 @@ Default behavior: print to chat AND save AI-first note to Research/YouTube/.
 
 import argparse
 import json
+import os
 import shutil
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 
-from .lib import grok, video_frames, vault, youtube
+from .lib import grok, vault, video_frames, youtube
 
 # Frames the visual layer reads by default. Kept modest: each frame is an image
 # Claude reads, so cost scales with count. Override with --max-frames.
 DEFAULT_VISUAL_MAX_FRAMES = 24
 
-SUMMARIZE_PROMPT = """You are summarizing a YouTube video for a knowledge vault. The note will be read by future-Claude (an AI), not by a human. Optimize for AI retrieval.
+SUMMARIZE_PROMPT = """You are summarizing a YouTube video for a knowledge vault. The note will be read by future agent (an AI), not by a human. Optimize for AI retrieval.
 
 VIDEO TITLE: {title}
 CHANNEL: {channel}
@@ -65,7 +66,7 @@ Produce EXACTLY this structure (markdown):
 - [Specific things mentioned that would be worth a deeper /research call later]
 
 Rules:
-- Be specific. "Talks about AI" is useless to future-Claude. "Argues that LLM context windows over 1M tokens degrade reasoning quality after 200k tokens" is useful.
+- Be specific. "Talks about AI" is useless to future agent. "Argues that LLM context windows over 1M tokens degrade reasoning quality after 200k tokens" is useful.
 - Don't pad. If a section is genuinely thin, write one bullet and move on.
 - Don't add commentary outside this structure.
 """
@@ -185,12 +186,24 @@ def main(argv: list[str]) -> int:
         comments_section=comments_section,
     )
 
-    print(f"[/youtube] Summarizing via Grok...\n", file=sys.stderr)
-    try:
-        result = grok.call(prompt, command="youtube", max_output_tokens=3000)
-    except Exception as e:
-        print(f"\n❌ /youtube summarize failed: {e}", file=sys.stderr)
-        return 1
+    # Prefer Gemini for the summary when its key is set (generous free tier),
+    # fall back to Grok - transparently, since gemini.call mirrors grok.call's
+    # return shape. No Gemini key = exactly the old Grok-only behavior.
+    result = None
+    if os.environ.get("GEMINI_API_KEY", "").strip():
+        print("[/youtube] Summarizing via Gemini (free tier)...\n", file=sys.stderr)
+        try:
+            from .lib import gemini
+            result = gemini.call(prompt, command="youtube", max_output_tokens=3000)
+        except Exception as e:  # noqa: BLE001 - fall back to Grok on any Gemini failure
+            print(f"[/youtube] Gemini failed ({e}); falling back to Grok...", file=sys.stderr)
+    if result is None:
+        print("[/youtube] Summarizing via Grok...\n", file=sys.stderr)
+        try:
+            result = grok.call(prompt, command="youtube", max_output_tokens=3000)
+        except Exception as e:
+            print(f"\n❌ /youtube summarize failed: {e}", file=sys.stderr)
+            return 1
 
     print(f"# {title}")
     print(f"**Channel:** {channel} · **Published:** {published}")
@@ -200,7 +213,7 @@ def main(argv: list[str]) -> int:
     # AI-first save
     now = datetime.now()
     preamble = (
-        f"For future Claude: This note is a transcript-grounded summary of YouTube video \"{title}\" "
+        f"For future agent: This note is a transcript-grounded summary of YouTube video \"{title}\" "
         f"by {channel} (published {published}), processed on {now.strftime('%Y-%m-%d %H:%M')}. "
         f"Transcript was extracted via youtube-transcript-api and summarized via Grok. "
         f"Quotes are sourced from the transcript verbatim where attributed. Use Worth Following Up On bullets to spawn deeper research."
@@ -231,7 +244,7 @@ def main(argv: list[str]) -> int:
         "ai-first": True,
     }
     note_body = (
-        f"## For future Claude\n\n{preamble}\n\n"
+        f"## For future agent\n\n{preamble}\n\n"
         f"## Video\n\n"
         f"- **Title:** {title}\n"
         f"- **Channel:** {channel}\n"
