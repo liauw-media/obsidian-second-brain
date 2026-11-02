@@ -23,7 +23,7 @@ from pathlib import Path
 sys.path.insert(0, Path(__file__).parent.as_posix())
 
 import vault_ops  # noqa: E402
-from mcp.server.fastmcp import FastMCP  # noqa: E402
+from mcp.server.fastmcp import Context, FastMCP  # noqa: E402
 
 mcp = FastMCP("obsidian-second-brain")
 
@@ -48,6 +48,29 @@ def obsidian_read_note(path: str, offset: int = 0, limit: int = 20_000) -> str:
     return json.dumps(vault_ops.read_note(path, offset=offset, limit=limit))
 
 
+def _client_identity(ctx: "Context | None") -> str:
+    """Best-effort writer identity for the source_agent stamp: the MCP client's
+    declared name plus the peer address. Never raises - a stamp must not stop a
+    save - and says 'unknown' when a transport exposes neither."""
+    name = host = ""
+    try:
+        params = ctx.session.client_params if ctx is not None else None
+        if params is not None and params.clientInfo is not None:
+            name = str(params.clientInfo.name or "")
+    except Exception:  # noqa: BLE001 - stateless transports have no session params
+        pass
+    try:
+        req = ctx.request_context.request if ctx is not None else None
+        client = getattr(req, "client", None)
+        host = str(getattr(client, "host", "") or "")
+        fwd = req.headers.get("x-forwarded-for", "") if req is not None else ""
+        if fwd:
+            host = fwd.split(",")[0].strip()
+    except Exception:  # noqa: BLE001
+        pass
+    return (name or "unknown") + ("@" + host if host else "")
+
+
 @mcp.tool()
 def obsidian_save_note(
     title: str,
@@ -56,18 +79,28 @@ def obsidian_save_note(
     tags: list[str] | None = None,
     path: str | None = None,
     summary: str | None = None,
+    source_agent: str | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """Save a new AI-first note.
 
-    `path` is an optional vault-relative markdown path such as
-    `wiki/entities/Ada Lovelace.md`. Omit it for a dated Inbox capture.
+    Omit `path` for a dated Inbox capture (`Inbox/YYYY-MM-DD - slug.md`).
+    An explicit `path` must sit inside the folder canon, exact case:
+    `Inbox/`, `links/`, `MOCs/`, `daily/`, `attachments/`, or
+    `notes/{projects,ops,procedures,decisions,knowledge-web,research}/...`;
+    a project note goes to `notes/projects/<slug>/` with optional
+    `ship-logs/`, `lanes/`, `status/`, `plans/`. Anything else is refused
+    with the rule that was broken - do not invent folders.
     `summary` becomes the platform-neutral `## For future agent` preamble. If
     content already begins with a legacy or generic future-agent heading, the
-    server normalizes it and never duplicates it.
+    server normalizes it and never duplicates it. `source_agent` names the
+    writer (e.g. `claude-code@atlas`, `hermes@vm6000`); when omitted the
+    server stamps the MCP client identity it can see.
     """
     return json.dumps(
         vault_ops.save_note(
-            title, content, note_type=type, tags=tags, path=path, summary=summary
+            title, content, note_type=type, tags=tags, path=path, summary=summary,
+            source_agent=(source_agent or "").strip() or _client_identity(ctx),
         )
     )
 
@@ -118,8 +151,9 @@ def obsidian_replace_text(path: str, old_text: str, new_text: str) -> str:
 def obsidian_move_note(source: str, destination: str) -> str:
     """Move a markdown note inside the vault without overwriting a destination.
 
-    Use to graduate Inbox captures into canonical entity/project folders. The
-    result reminds callers to repair any path-qualified links to the old path.
+    Use to graduate Inbox captures into the canon folders (same rules as
+    obsidian_save_note's `path`; a destination outside the canon is refused).
+    The result reminds callers to repair any path-qualified links to the old path.
     """
     return json.dumps(vault_ops.move_note(source, destination))
 

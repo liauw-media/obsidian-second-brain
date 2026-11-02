@@ -141,3 +141,90 @@ def test_a_failed_write_leaves_the_original_intact(vault, monkeypatch):
     assert target.read_text(encoding="utf-8") == before, "the original note was damaged"
     assert "THIS MUST NOT LAND" not in target.read_text(encoding="utf-8")
     assert not list(v.glob(".*.tmp")), "the temp file was not cleaned up after the failure"
+
+
+# ---------------------------------------------------------------- folder canon (2026-11-02)
+# The vault grew six homes for ship-logs and four for projects because save_note
+# created any folder it was handed. The canon is exact-case and ASCII; a writer
+# that invents a folder is refused with the broken rule, not routed silently.
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "notes/projects/omnitronix/ship-logs/2026-11-02 - x.md",
+        "notes/projects/omnitronix/lanes/acc-as-13.md",
+        "notes/projects/bet101/plan.md",
+        "notes/ops/session-mail/offen/2026-11-02-msg.md",
+        "notes/knowledge-web/infrastructure/x.md",
+        "notes/research/x-reads/2026-11-02 - y.md",
+        "notes/decisions/2026-11-02 - z.md",
+        "Inbox/2026-11-02 - capture.md",
+        "links/gli-standards/gli11.md",
+        "MOCs/HOME.md",
+        "hot.md",
+        "notes/projects/omnitronix.md",
+        "notes/_overview.md",
+        "notes/ops/_abstract.md",
+    ],
+)
+def test_canon_accepts_the_agreed_layout(vault, rel):
+    v, ops = vault
+    assert ops.canon_violation(rel) is None
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "Projekte/spintrix/x.md",
+        "projects/omnitronix/ship-logs/x.md",
+        "Ship-Logs/x.md",
+        "ship-logs/x.md",
+        "omnitronix/ship-log/x.md",
+        "wiki/status/x.md",
+        "Research/X-reads/x.md",
+        "Orgs/liauw-media/x.md",
+        "notes/project/x.md",
+        "notes/inbox/x.md",
+        "notes/plaene/x.md",
+        "notes/ship-logs/x.md",
+        "notes/Projects/omnitronix/x.md",
+        "notes/projects/Omnitronix/x.md",
+        "notes/projects/omnitronix/shiplogs/x.md",
+        "notes/projects/omnitronix/ship-logs/deeper/x.md",
+        "notes/x.md",
+        "inbox/x.md",
+        "Inbox/sub/x.md",
+        "neue-notiz.md",
+        "notes/ops/pläne/x.md",
+    ],
+)
+def test_canon_refuses_every_stray_home_seen_on_2026_11_02(vault, rel):
+    v, ops = vault
+    assert ops.canon_violation(rel) is not None
+
+
+def test_save_note_refuses_a_path_outside_the_canon_and_creates_no_folder(vault):
+    v, ops = vault
+    res = ops.save_note("t", "body", path="Projekte/spintrix/x.md")
+    assert "error" in res and "canon" in res["error"]
+    assert not (v / "Projekte").exists()
+
+
+def test_save_note_stamps_source_agent_in_the_canon(vault):
+    v, ops = vault
+    res = ops.save_note(
+        "t", "body", path="notes/projects/omnitronix/ship-logs/2026-11-02 - x.md",
+        source_agent="claude-code@atlas",
+    )
+    assert "saved" in res, res
+    text = (v / res["saved"]).read_text(encoding="utf-8")
+    assert "source_agent: claude-code@atlas\n" in text
+    assert "source: mcp\n" in text
+
+
+def test_move_note_refuses_a_destination_outside_the_canon(vault):
+    v, ops = vault
+    saved = ops.save_note("t", "body")["saved"]
+    res = ops.move_note(saved, "wiki/status/x.md")
+    assert "error" in res and "canon" in res["error"]
+    assert (v / saved).exists() and not (v / "wiki").exists()

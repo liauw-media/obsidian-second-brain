@@ -49,9 +49,9 @@ def test_save_supports_canonical_explicit_path(vault):
         "Alex Rivera",
         "Potential launch advisor. Availability is not confirmed.",
         note_type="person",
-        path="wiki/entities/Alex Rivera.md",
+        path="notes/knowledge-web/entities/Alex Rivera.md",
     )
-    assert result["saved"] == "wiki/entities/Alex Rivera.md"
+    assert result["saved"] == "notes/knowledge-web/entities/Alex Rivera.md"
     assert (root / result["saved"]).is_file()
     assert not (root / "Inbox").exists()
 
@@ -169,12 +169,12 @@ def test_move_note_graduates_inbox_without_overwrite(vault):
     (root / "Inbox").mkdir()
     src = root / "Inbox" / "capture.md"
     src.write_text("body\n", encoding="utf-8")
-    result = ops.move_note("Inbox/capture.md", "wiki/entities/Contact.md")
-    assert result["destination"] == "wiki/entities/Contact.md"
+    result = ops.move_note("Inbox/capture.md", "notes/knowledge-web/entities/Contact.md")
+    assert result["destination"] == "notes/knowledge-web/entities/Contact.md"
     assert not src.exists()
-    assert (root / "wiki/entities/Contact.md").read_text(encoding="utf-8") == "body\n"
+    assert (root / "notes/knowledge-web/entities/Contact.md").read_text(encoding="utf-8") == "body\n"
     (root / "Inbox" / "second.md").write_text("second\n", encoding="utf-8")
-    assert ops.move_note("Inbox/second.md", "wiki/entities/Contact.md").get("error")
+    assert ops.move_note("Inbox/second.md", "notes/knowledge-web/entities/Contact.md").get("error")
 
 
 def test_move_note_does_not_overwrite_on_a_destination_race(vault, monkeypatch):
@@ -188,7 +188,7 @@ def test_move_note_does_not_overwrite_on_a_destination_race(vault, monkeypatch):
         raise FileExistsError
 
     monkeypatch.setattr(ops.os, "link", raced_link)
-    result = ops.move_note("Inbox/capture.md", "wiki/entities/Contact.md")
+    result = ops.move_note("Inbox/capture.md", "notes/knowledge-web/entities/Contact.md")
     assert result.get("error")
     assert src.read_text(encoding="utf-8") == "precious source\n"
-    assert (root / "wiki/entities/Contact.md").read_text(encoding="utf-8") == "other writer\n"
+    assert (root / "notes/knowledge-web/entities/Contact.md").read_text(encoding="utf-8") == "other writer\n"

@@ -47,6 +47,78 @@ _SKIP_DIRS = {".obsidian", ".git", ".trash", "_trash", ".claude", "_export",
 # lowercase set against un-lowercased path parts, so it never matched.
 _PROTECTED_WRITE_DIRS = _SKIP_DIRS | {"raw"}
 
+# ---------------------------------------------------------------- Ordnerkanon
+# Betreiberentscheid 2026-11-02: der Vault hat einen festen, englischen,
+# kleingeschriebenen Ordnerkanon. Vorher legte save_note jeden gewuenschten
+# Ordner mit mkdir(parents=True) an; gemessen am 02.11.2026 gab es dadurch
+# sechs Heimaten fuer Ship-Logs (Ship-Logs/, ship-logs/, omnitronix/ship-log/,
+# omnitronix/ship-logs/, notes/ship-logs/, projects/omnitronix/ship-logs/) und
+# vier fuer Projekte (Projekte/, projects/, notes/project/, notes/projects/),
+# alle ueber den MCP geschrieben. Die Pruefung ist case-sensitiv, weil der
+# Vault auf NFS liegt und `inbox/` neben `Inbox/` still eine zweite Welt ist.
+# Jeder Schreibweg, der einen Pfad ANLEGT (save_note, move_note), muss durch
+# canon_violation(); Werkzeuge, die bestehende Notizen aendern, nicht.
+_CANON_ROOT_DIRS = {"Inbox", "links", "MOCs", "daily", "templates", "attachments", "notes"}
+_CANON_ROOT_FILES = {"hot.md", "log.md", "AGENTS.md", "_CLAUDE.md", "README.md", "INDEX.md"}
+_CANON_NOTES_AREAS = {"projects", "ops", "procedures", "decisions", "knowledge-web", "research"}
+_CANON_PROJECT_SUBDIRS = {"ship-logs", "lanes", "status", "plans"}
+_CANON_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
+
+
+def canon_violation(rel: str) -> Optional[str]:
+    """Return why `rel` (vault-relative, POSIX) falls outside the folder canon, or None.
+
+    Rules (2026-11-02):
+      * root: only the known root files and the root dirs, exact case;
+      * Inbox/, MOCs/, daily/: files only, no subfolders (Inbox/_README.md allowed);
+      * links/, attachments/: subfolders allowed, kebab-case;
+      * notes/<area>/: area in _CANON_NOTES_AREAS; notes/projects/<slug>.md is the
+        hub note, notes/projects/<slug>/ holds the rest with an optional subdir from
+        _CANON_PROJECT_SUBDIRS; other areas allow up to two kebab-case subfolder
+        levels (e.g. ops/session-mail/offen); generated `_*.md` digests anywhere;
+      * every path component is ASCII; folders are lowercase kebab-case.
+    """
+    parts = [p for p in (rel or "").replace("\\", "/").split("/") if p not in ("", ".")]
+    if not parts:
+        return "empty path"
+    if any(not p.isascii() for p in parts):
+        return "path must be ASCII (umlauts belong in the content, not the file name)"
+    if len(parts) == 1:
+        return None if parts[0] in _CANON_ROOT_FILES else (
+            f"no new files in the vault root; allowed root files: {sorted(_CANON_ROOT_FILES)}")
+    root, dirs, leaf = parts[0], parts[1:-1], parts[-1]
+    if root not in _CANON_ROOT_DIRS:
+        return (f"'{root}/' is not a canon folder; allowed: {sorted(_CANON_ROOT_DIRS)} "
+                f"(exact case; projects live in notes/projects/<slug>/)")
+    for d in dirs:
+        if not _CANON_SLUG_RE.match(d):
+            return f"folder '{d}' must be lowercase kebab-case ASCII"
+    if root in ("Inbox", "MOCs", "daily"):
+        return None if not dirs else f"{root}/ takes files only, no subfolders"
+    if root in ("links", "attachments", "templates"):
+        return None
+    # root == "notes". Generated folder digests (_overview.md, _abstract.md) come
+    # from the reindex job and may sit in any notes folder, including notes/ itself.
+    generated = leaf.startswith("_") and leaf.endswith(".md")
+    if not dirs:
+        return None if generated else (
+            f"notes/ takes no files directly; use notes/<area>/ with area in {sorted(_CANON_NOTES_AREAS)}")
+    area = dirs[0]
+    if area not in _CANON_NOTES_AREAS:
+        return f"'notes/{area}/' is not a canon area; allowed: {sorted(_CANON_NOTES_AREAS)}"
+    if area == "projects":
+        # notes/projects/<slug>.md is the project's hub note (190 of them on
+        # 2026-11-02); everything else about a project lives in notes/projects/<slug>/.
+        if len(dirs) >= 3 and dirs[2] not in _CANON_PROJECT_SUBDIRS:
+            return (f"'{dirs[2]}/' is not a project subfolder; allowed: "
+                    f"{sorted(_CANON_PROJECT_SUBDIRS)}")
+        if len(dirs) > 3:
+            return "project folders nest at most notes/projects/<slug>/<subdir>/"
+        return None
+    if len(dirs) > 3:
+        return f"notes/{area}/ nests at most two subfolder levels"
+    return None
+
 # Operational logs and immutable raw sources are rarely the *answer* to a query:
 # they are long and term-dense, so without a penalty they dominate term-frequency
 # ranking and bury short canonical notes (measured: 0% recall@10 before this - see
@@ -775,8 +847,14 @@ def save_note(
     tags: Optional[List[str]] = None,
     path: Optional[str] = None,
     summary: Optional[str] = None,
+    source_agent: Optional[str] = None,
 ) -> Dict[str, Any]:
-    """Write an AI-first note to Inbox or an explicit vault-relative path."""
+    """Write an AI-first note to Inbox or an explicit vault-relative path.
+
+    An explicit path must satisfy canon_violation() (2026-11-02). `source_agent`
+    is stamped into the frontmatter so a note can be traced to its writer; the
+    MCP layer fills it from the client identity when the caller gives none.
+    """
     vault = resolve_vault()
     title = (title or "").strip()
     content = (content or "").strip()
@@ -795,6 +873,9 @@ def save_note(
             return {"error": "path must end in .md"}
         if {p.lower() for p in target.relative_to(vault).parts} & _PROTECTED_WRITE_DIRS:
             return {"error": "path is in a protected directory"}
+        why = canon_violation(target.relative_to(vault).as_posix())
+        if why:
+            return {"error": f"path outside the folder canon: {why}"}
     else:
         inbox = vault / _NOTES_DIR
         target = inbox / f"{date} - {_slug(title)}.md"
@@ -811,7 +892,8 @@ def save_note(
         f"tags:\n{tag_block}\n"
         f"ai-first: true\n"
         f"source: mcp\n"
-        f"---\n\n"
+        + (f"source_agent: {_fm_scalar(source_agent)}\n" if source_agent else "")
+        + f"---\n\n"
         f"{note_body}"
     )
     # B7: the filename is date + slug, so a second save with the same title on
@@ -937,6 +1019,9 @@ def move_note(source: str, destination: str) -> Dict[str, Any]:
             return {"error": "source or destination is in a protected directory"}
     if not src.is_file():
         return {"error": f"not found: {source}"}
+    why = canon_violation(dst.relative_to(vault).as_posix())
+    if why:
+        return {"error": f"destination outside the folder canon: {why}"}
     if dst.exists():
         return {"error": f"destination already exists: {destination}"}
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1330,6 +1415,15 @@ def _read_safe(path: Path, *, limit: int = 4_000_000) -> Optional[str]:
         return path.read_text(encoding="utf-8-sig", errors="replace")[:limit]
     except OSError:
         return None
+
+
+def _fm_scalar(value: str) -> str:
+    """One frontmatter scalar: single line, quoted when YAML would misread it."""
+    v = " ".join(str(value).split())[:120]
+    # YAML reads a plain scalar fine unless it starts with an indicator or
+    # contains ": " / " #"; `claude-code@atlas` stays plain, `a: b` gets quoted.
+    risky = (not v) or re.match(r'[-?:,\[\]{}#&*!|>\'"%@`]', v) or ": " in v or " #" in v
+    return '"' + v.replace('"', "'") + '"' if risky else v
 
 
 def _slug(text: str) -> str:
