@@ -909,7 +909,7 @@ Steps:
 1. Validate the URL contains `x.com/` or `twitter.com/`
 2. Run `uv run -m scripts.research.x_read "<url>"` from the repo root
 3. Show the structured analysis verbatim to the user
-4. **Default save: chat only.** If the user asks "save this", write an AI-first note to `Research/X-reads/`
+4. **Default save: chat only.** If the user asks "save this", write an AI-first note to `notes/research/x-reads/`
 
 Plain English triggers: "read this tweet", "analyze this X post", "what's in this tweet".
 
