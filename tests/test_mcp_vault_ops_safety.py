@@ -228,3 +228,39 @@ def test_move_note_refuses_a_destination_outside_the_canon(vault):
     res = ops.move_note(saved, "wiki/status/x.md")
     assert "error" in res and "canon" in res["error"]
     assert (v / saved).exists() and not (v / "wiki").exists()
+
+
+# ---------------------------------------------------------------- Inbox-first (2026-11-03)
+
+def test_save_note_with_a_curated_path_lands_in_inbox_and_keeps_the_wish(vault):
+    v, ops = vault
+    res = ops.save_note("Entscheid X", "body", path="notes/decisions/2026-11-03 - entscheid-x.md")
+    assert res["saved"].startswith("Inbox/"), res
+    assert res["intended_path"] == "notes/decisions/2026-11-03 - entscheid-x.md"
+    assert not (v / "notes" / "decisions").exists()
+    text = (v / res["saved"]).read_text(encoding="utf-8")
+    assert "intended_path: notes/decisions/2026-11-03 - entscheid-x.md\n" in text
+
+
+@pytest.mark.parametrize(
+    "rel",
+    [
+        "notes/ops/session-mail/offen/2026-11-03-0001-a-an-alle-x.md",
+        "notes/ops/health/2026-11-03-lint.md",
+        "notes/ops/broadcasts/2026-11-03-x.md",
+        "daily/2026-11-03.md",
+        "links/20261103-capture.md",
+    ],
+)
+def test_machine_folders_keep_their_explicit_path(vault, rel):
+    v, ops = vault
+    res = ops.save_note("t", "body", path=rel)
+    assert res.get("saved") == rel, res
+    assert "intended_path" not in res
+
+
+def test_a_canon_violation_is_still_refused_not_redirected(vault):
+    v, ops = vault
+    res = ops.save_note("t", "body", path="Projekte/x.md")
+    assert "error" in res and "canon" in res["error"]
+    assert not any(p.name.endswith("- t.md") for p in (v / "Inbox").iterdir())

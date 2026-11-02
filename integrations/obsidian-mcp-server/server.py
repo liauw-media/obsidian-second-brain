@@ -84,13 +84,17 @@ def obsidian_save_note(
 ) -> str:
     """Save a new AI-first note.
 
-    Omit `path` for a dated Inbox capture (`Inbox/YYYY-MM-DD - slug.md`).
-    An explicit `path` must sit inside the folder canon, exact case:
-    `Inbox/`, `links/`, `MOCs/`, `daily/`, `attachments/`, or
-    `notes/{projects,ops,procedures,decisions,knowledge-web,research}/...`;
-    a project note goes to `notes/projects/<slug>/` with optional
-    `ship-logs/`, `lanes/`, `status/`, `plans/`. Anything else is refused
-    with the rule that was broken - do not invent folders.
+    Inbox-first: every note lands in `Inbox/YYYY-MM-DD - slug.md`. A `path`
+    is a WISH for where it belongs (folder canon, exact case:
+    `notes/{projects,ops,procedures,decisions,knowledge-web,research}/...`,
+    a project note under `notes/projects/<slug>/` with optional `ship-logs/`,
+    `lanes/`, `status/`, `plans/`); the server keeps it as frontmatter
+    `intended_path` and the nightly sorter files and links the note. Only
+    machine folders are written in place: `notes/ops/session-mail/`,
+    `notes/ops/health/`, `notes/ops/broadcasts/`, `daily/`, `links/`,
+    `attachments/`. A path outside the canon is refused with the broken
+    rule - do not invent folders. To file an existing note yourself use
+    obsidian_move_note.
     `summary` becomes the platform-neutral `## For future agent` preamble. If
     content already begins with a legacy or generic future-agent heading, the
     server normalizes it and never duplicates it. `source_agent` names the

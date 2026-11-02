@@ -64,6 +64,26 @@ _CANON_NOTES_AREAS = {"projects", "ops", "procedures", "decisions", "knowledge-w
 _CANON_PROJECT_SUBDIRS = {"ship-logs", "lanes", "status", "plans"}
 _CANON_SLUG_RE = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 
+# Inbox-first (operator, 2026-11-03): an agent never files a note itself. Every
+# save_note lands in Inbox/; the requested path survives as frontmatter
+# `intended_path` so the nightly sorter (Hermes job + heal_links + graphify)
+# can file and link it. Only machine mailboxes and reports keep an explicit
+# path, because a human never curates them and their readers index by path.
+_MACHINE_PATH_PREFIXES = (
+    "notes/ops/session-mail/",   # Sitzungspost: INDEX + offen/erledigt, gelesen per Pfad
+    "notes/ops/health/",         # Nachtlint-, Sortierer-, Triage-Berichte
+    "notes/ops/broadcasts/",     # comms-bus
+    "daily/",                    # Tagesnotizen der Agenten
+    "links/",                    # raw captures (sources are immutable)
+    "attachments/",
+)
+
+
+def machine_path(rel: str) -> bool:
+    """True when `rel` belongs to a machine-written folder that may bypass Inbox-first."""
+    r = (rel or "").replace("\\", "/").lstrip("./")
+    return any(r.startswith(p) for p in _MACHINE_PATH_PREFIXES)
+
 
 def canon_violation(rel: str) -> Optional[str]:
     """Return why `rel` (vault-relative, POSIX) falls outside the folder canon, or None.
@@ -864,6 +884,8 @@ def save_note(
     tags = [str(t) for t in (tags or [note_type])]
 
     date = datetime.now().strftime("%Y-%m-%d")
+    intended: Optional[str] = None
+    redirected = False
     if path:
         requested = path.strip()
         target = _resolve_in_vault(vault, requested)
@@ -873,9 +895,15 @@ def save_note(
             return {"error": "path must end in .md"}
         if {p.lower() for p in target.relative_to(vault).parts} & _PROTECTED_WRITE_DIRS:
             return {"error": "path is in a protected directory"}
-        why = canon_violation(target.relative_to(vault).as_posix())
+        rel = target.relative_to(vault).as_posix()
+        why = canon_violation(rel)
         if why:
             return {"error": f"path outside the folder canon: {why}"}
+        if not machine_path(rel) and not rel.startswith(_NOTES_DIR + "/"):
+            # Inbox-first: keep the wish, file nothing. The sorter reads intended_path.
+            intended = rel
+            redirected = True
+            target = vault / _NOTES_DIR / f"{date} - {_slug(title)}.md"
     else:
         inbox = vault / _NOTES_DIR
         target = inbox / f"{date} - {_slug(title)}.md"
@@ -893,6 +921,7 @@ def save_note(
         f"ai-first: true\n"
         f"source: mcp\n"
         + (f"source_agent: {_fm_scalar(source_agent)}\n" if source_agent else "")
+        + (f"intended_path: {_fm_scalar(intended)}\n" if intended else "")
         + f"---\n\n"
         f"{note_body}"
     )
@@ -908,7 +937,12 @@ def save_note(
         }
     target.parent.mkdir(parents=True, exist_ok=True)
     _write_atomic(target, body)
-    return {"saved": target.relative_to(vault).as_posix()}
+    out: Dict[str, Any] = {"saved": target.relative_to(vault).as_posix()}
+    if redirected:
+        out["intended_path"] = intended
+        out["note"] = ("Inbox-first: saved to Inbox/, not to the requested path; the nightly "
+                       "sorter files it (frontmatter intended_path keeps your wish)")
+    return out
 
 
 def capture_idea(text: str, *, tags: Optional[List[str]] = None) -> Dict[str, Any]:

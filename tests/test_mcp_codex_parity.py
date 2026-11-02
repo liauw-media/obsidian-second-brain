@@ -44,17 +44,18 @@ def test_save_collapses_repeated_legacy_preambles(vault):
 
 
 def test_save_supports_canonical_explicit_path(vault):
+    # Inbox-first (2026-11-03): a curated path is a wish, not a file location. The
+    # note lands in Inbox/ and carries intended_path for the nightly sorter.
     root, ops = vault
     result = ops.save_note(
-        "Alex Rivera",
-        "Potential launch advisor. Availability is not confirmed.",
-        note_type="person",
+        "Alex Rivera", "A person.",
         path="notes/knowledge-web/entities/Alex Rivera.md",
     )
-    assert result["saved"] == "notes/knowledge-web/entities/Alex Rivera.md"
-    assert (root / result["saved"]).is_file()
-    assert not (root / "Inbox").exists()
-
+    assert result["saved"].startswith("Inbox/"), result
+    assert result["intended_path"] == "notes/knowledge-web/entities/Alex Rivera.md"
+    assert not (root / "notes/knowledge-web/entities").exists()
+    text = (root / result["saved"]).read_text(encoding="utf-8")
+    assert "intended_path: notes/knowledge-web/entities/Alex Rivera.md\n" in text
 
 def test_save_explicit_path_guards(vault):
     _, ops = vault
